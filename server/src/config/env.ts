@@ -16,5 +16,6 @@ export const env = {
   databasePath: process.env.DATABASE_PATH ?? "./server/data/panel.db",
   minecraftRoot: process.env.MINECRAFT_ROOT ?? "/srv/minecraft",
   minecraftUser: process.env.MINECRAFT_USER ?? "minecraft",
-  maxRamMb: positiveInt("MAX_RAM_MB", 6144)
+  maxRamMb: positiveInt("MAX_RAM_MB", 6144),
+  cookieSecure: true
 };
