@@ -7,15 +7,15 @@ import request from "supertest";
 const dbPath=path.join(fs.mkdtempSync(path.join(os.tmpdir(),"mc-panel-test-")),"panel.db");
 process.env.NODE_ENV="test";process.env.DATABASE_PATH=dbPath;process.env.PANEL_ORIGIN="https://panel.test";process.env.HOST="127.0.0.1";process.env.PORT="0";
 
-const {db}=await import("../src/database/db.js");
-const {createApp}=await import("../src/app.js");
-const {ensureSetupToken}=await import("../src/auth/setup.js");
-const {createSession}=await import("../src/auth/session.js");
-const {hashPassword}=await import("../src/auth/crypto.js");
-const {recordLoginAttempt}=await import("../src/auth/rate-limit.js");
+const {db}=await import("../database/db.js");
+const {createApp}=await import("../app.js");
+const {ensureSetupToken}=await import("../auth/setup.js");
+const {createSession}=await import("../auth/session.js");
+const {hashPassword}=await import("../auth/crypto.js");
+const {recordLoginAttempt}=await import("../auth/rate-limit.js");
 
 const app=createApp();
-const csrf=async()=>{const r=await request(app).get("/api/auth/csrf");return r.body.token as string;};
+const csrf=async(): Promise<string> => { const r=await request(app).get("/api/auth/csrf"); if(typeof r.body.token!=="string") throw new Error("CSRF endpoint did not return a token"); return r.body.token; };
 const cookie=(name:string,value:string)=>name+"="+value;
 
 beforeAll(async()=>{const log=vi.spyOn(console,"log").mockImplementation(()=>{});await ensureSetupToken();log.mockRestore();});
@@ -39,7 +39,7 @@ describe("Group 2 authentication security",()=>{
    await ensureSetupToken();
    const message=output.mock.calls[0]?.[0] as string;
    output.mockRestore();
-   const setupToken=message.split(": ").pop()!;
+   const setupToken=message.split(": ").pop(); if(typeof setupToken!=="string") throw new Error("Setup token was not printed");
    const token=await csrf();
    const first=await request(app).post("/api/auth/setup").set("Cookie",cookie("mc_csrf",token)).set("X-CSRF-Token",token).send({setupToken,email:"owner@example.com",password:"StrongPassword123!"});
    expect(first.status).toBe(201);
@@ -61,8 +61,8 @@ describe("Group 2 authentication security",()=>{
  it("expires idle sessions",async()=>{
    const row=db.prepare("SELECT id FROM users WHERE role='owner' LIMIT 1").get() as any;
    const session=createSession(row.id,{ip:"127.0.0.1",headers:{}});
-   db.prepare("UPDATE sessions SET last_activity_at=?,expires_at=? WHERE token_hash=?").run("2000-01-01T00:00:00.000Z","2000-01-01T00:00:00.000Z",await import("../src/auth/crypto.js").then(m=>m.sha256(session.token)));
-   const {getSession}=await import("../src/auth/session.js");
+   db.prepare("UPDATE sessions SET last_activity_at=?,expires_at=? WHERE token_hash=?").run("2000-01-01T00:00:00.000Z","2000-01-01T00:00:00.000Z",await import("../auth/crypto.js").then(m=>m.sha256(session.token)));
+   const {getSession}=await import("../auth/session.js");
    expect(getSession(session.token)).toBeNull();
  });
 
