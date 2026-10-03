@@ -10,6 +10,17 @@ on:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    env:
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: 3000
+      PANEL_ORIGIN: https://panel.test
+      SESSION_TTL_HOURS: 24
+      SETUP_TOKEN_TTL_MINUTES: 15
+      DATABASE_PATH: ./server/data/panel.db
+      MINECRAFT_ROOT: /srv/minecraft
+      MINECRAFT_USER: minecraft
+      MAX_RAM_MB: 6144
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

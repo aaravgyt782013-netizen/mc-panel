@@ -73,7 +73,7 @@ router.post("/change-password",requireAuth,async(req,res)=>{
 router.post("/accept-invite",async(req,res)=>{
   const {token,email,password}=req.body??{};
   if(typeof token!=="string"||typeof email!=="string"||typeof password!=="string"||password.length<PASSWORD_MIN_LENGTH)return res.status(400).json({error:"Invalid invitation details"});
-  const invite=db.prepare("SELECT * FROM invites WHERE token_hash=? AND used_at IS NULL AND expires_at>?").get(sha256(token),new Date().toISOString()) as any;
+  const invite=db.prepare("SELECT * FROM invites WHERE token_hash=? AND used_at IS NULL AND expires_at>?" ).get(sha256(token),new Date().toISOString()) as any;
   if(!invite||(invite.email&&invite.email.toLowerCase()!==email.trim().toLowerCase()))return res.status(400).json({error:"Invalid or expired invitation"});
   const passwordHash=await hashPassword(password);
   try{

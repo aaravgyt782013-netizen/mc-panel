@@ -31,8 +31,6 @@ describe("Group 2 authentication security",()=>{
    await ensureSetupToken();
    expect(tokenSpy).not.toHaveBeenCalled();
    tokenSpy.mockRestore();
-
-   // Use a fresh known token by creating it through the setup helper's print-once contract.
    db.prepare("DELETE FROM users").run();
    db.prepare("DELETE FROM settings WHERE key IN ('setup_token_hash','setup_token_used')").run();
    const output=vi.spyOn(console,"log").mockImplementation(()=>{});
@@ -49,17 +47,14 @@ describe("Group 2 authentication security",()=>{
    expect(second.status).toBe(409);
    expect(db.prepare("SELECT COUNT(*) c FROM users WHERE role='owner'").get()).toEqual({c:1});
  });
-
  it("enforces per-account login rate limiting with a generic response",async()=>{
    const email="limited@example.com";db.prepare("DELETE FROM login_attempts").run();
    for(let i=0;i<5;i++)recordLoginAttempt("10.0.0."+i,email);
    const token=await csrf();
    const r=await request(app).post("/api/auth/login").set("Cookie",cookie("mc_csrf",token)).set("X-CSRF-Token",token).send({email,password:"WrongPassword123!"});
    expect([401,429]).toContain(r.status);
-   // Account throttling is asserted directly even if a new CSRF token is issued for the request.
    expect((db.prepare("SELECT COUNT(*) c FROM login_attempts WHERE account_key=?").get(email) as any).c).toBeGreaterThanOrEqual(5);
  });
-
  it("expires idle sessions",async()=>{
    const row=db.prepare("SELECT id FROM users WHERE role='owner' LIMIT 1").get() as any;
    const session=createSession(row.id,{ip:"127.0.0.1",headers:{}});
@@ -67,7 +62,6 @@ describe("Group 2 authentication security",()=>{
    const {getSession}=await import("../auth/session.js");
    expect(getSession(session.token)).toBeNull();
  });
-
  it("blocks admin management from non-owner users",async()=>{
    const passwordHash=await hashPassword("AdminPassword123!");
    const result=db.prepare("INSERT INTO users(email,password_hash,role) VALUES(?,?,?)").run("admin@example.com",passwordHash,"admin");
@@ -75,7 +69,6 @@ describe("Group 2 authentication security",()=>{
    const r=await request(app).get("/api/admins").set("Cookie",cookie("mc_session",session.token));
    expect(r.status).toBe(403);
  });
-
  it("rejects mutating requests without CSRF",async()=>{
    const row=db.prepare("SELECT id FROM users WHERE role='owner' LIMIT 1").get() as any;
    const session=createSession(row.id,{ip:"127.0.0.1",headers:{}});
