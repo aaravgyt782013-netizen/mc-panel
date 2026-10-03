@@ -34,11 +34,12 @@ router.post("/login",authRateLimit,async(req,res)=>{
   const {email,password}=req.body??{};
   const normalized=typeof email==="string"?email.trim().toLowerCase():"";
   const generic="Invalid email or password";
+  const clientIp=req.ip ?? "unknown";
   if(!normalized||typeof password!=="string"){audit("LOGIN_FAILED",null,req,normalized||undefined);return res.status(401).json({error:generic});}
-  if(isLoginRateLimited(req.ip,normalized)) return res.status(429).json({error:generic});
+  if(isLoginRateLimited(clientIp,normalized)) return res.status(429).json({error:generic});
   const user=db.prepare("SELECT id,email,password_hash,role,active FROM users WHERE email=?").get(normalized) as any;
   const valid=user?await verifyPassword(password,user.password_hash):await verifyPassword(password,DUMMY_HASH);
-  if(!user||!user.active||!valid){recordLoginAttempt(req.ip,normalized);audit("LOGIN_FAILED",user?.id??null,req,normalized);return res.status(401).json({error:generic});}
+  if(!user||!user.active||!valid){recordLoginAttempt(clientIp,normalized);audit("LOGIN_FAILED",user?.id??null,req,normalized);return res.status(401).json({error:generic});}
   clearLoginAttempts(normalized);
   db.prepare("UPDATE users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?").run(user.id);
   const session=createSession(user.id,req);
