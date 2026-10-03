@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../database/db.js";
 import { audit } from "../auth/audit.js";
-import { hashPassword, PASSWORD_MIN_LENGTH, randomToken, sha256, verifyPassword, dummyPasswordHash } from "../auth/crypto.js";
+import { hashPassword, PASSWORD_MIN_LENGTH, sha256, verifyPassword, dummyPasswordHash } from "../auth/crypto.js";
 import { createOwner, consumeSetupToken, setupStatus } from "../auth/setup.js";
 import { authRateLimit } from "../middleware/security.js";
 import { createSession, SESSION_COOKIE, revokeAllSessions, revokeSessionByToken } from "../auth/session.js";
@@ -74,11 +74,11 @@ router.post("/accept-invite",async(req,res)=>{
   if(typeof token!=="string"||typeof email!=="string"||typeof password!=="string"||password.length<PASSWORD_MIN_LENGTH)return res.status(400).json({error:"Invalid invitation details"});
   const invite=db.prepare("SELECT * FROM invites WHERE token_hash=? AND used_at IS NULL AND expires_at>?").get(sha256(token),new Date().toISOString()) as any;
   if(!invite||(invite.email&&invite.email.toLowerCase()!==email.trim().toLowerCase()))return res.status(400).json({error:"Invalid or expired invitation"});
+  const passwordHash=await hashPassword(password);
   try{
-    const userId=db.transaction(()=>{const r=db.prepare("INSERT INTO users (email,password_hash,role) VALUES (?,?, 'admin')").run(email.trim().toLowerCase(),awaitableHashPlaceholder());db.prepare("UPDATE invites SET used_at=CURRENT_TIMESTAMP WHERE id=?").run(invite.id);return Number(r.lastInsertRowid);})();
-    return res.status(201).json({ok:true,userId});
+    const userId=db.transaction(()=>{const r=db.prepare("INSERT INTO users (email,password_hash,role) VALUES (?,?, 'admin')").run(email.trim().toLowerCase(),passwordHash);db.prepare("UPDATE invites SET used_at=CURRENT_TIMESTAMP WHERE id=?").run(invite.id);return Number(r.lastInsertRowid);})();
+    audit("ADD_ADMIN",userId,req,email.toLowerCase());
+    return res.status(201).json({ok:true});
   }catch{return res.status(409).json({error:"Account already exists"});}
 });
-async function awaitableHashPlaceholder():Promise<never>{throw new Error("unreachable");}
-
 export default router;
