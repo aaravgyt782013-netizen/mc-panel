@@ -37,9 +37,11 @@ describe("Group 2 authentication security",()=>{
    db.prepare("DELETE FROM settings WHERE key IN ('setup_token_hash','setup_token_used')").run();
    const output=vi.spyOn(console,"log").mockImplementation(()=>{});
    await ensureSetupToken();
-   const message=output.mock.calls[0]?.[0] as string;
+   const messageValue=output.mock.calls[0]?.[0];
    output.mockRestore();
-   const setupToken=message.split(": ").pop(); if(typeof setupToken!=="string") throw new Error("Setup token was not printed");
+   if(typeof messageValue!=="string") throw new Error("Setup token was not printed");
+   const setupToken=messageValue.split(": ").pop();
+   if(typeof setupToken!=="string") throw new Error("Setup token was empty");
    const token=await csrf();
    const first=await request(app).post("/api/auth/setup").set("Cookie",cookie("mc_csrf",token)).set("X-CSRF-Token",token).send({setupToken,email:"owner@example.com",password:"StrongPassword123!"});
    expect(first.status).toBe(201);
