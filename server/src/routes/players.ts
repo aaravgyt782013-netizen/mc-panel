@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { requireAuth } from "../auth/middleware.js";
@@ -35,7 +35,7 @@ export function createPlayerRoutes(manager:MinecraftProcessManager){
   return router;
 }
 
-function command(manager:MinecraftProcessManager,req:any,res:any,prefix:string,auditAction:string,withReason=false){
+function command(manager: MinecraftProcessManager, req: Request, res: Response, prefix: string, auditAction: string, withReason = false){
   const name=req.body?.name;
   if(!checkName(name)) return res.status(400).json({error:"Invalid player name"});
   const reason=req.body?.reason;

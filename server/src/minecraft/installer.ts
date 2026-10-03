@@ -66,7 +66,7 @@ async function download(
   const file = fs.createWriteStream(temporary);
   try {
     for await (const chunk of result.body as AsyncIterable<Uint8Array>) file.write(chunk);
-    await new Promise<void>((resolve, reject) => file.end(error => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) => file.end((error: NodeJS.ErrnoException | null) => error ? reject(error) : resolve()));
     if (checksum) verifyChecksum(temporary, checksum.value, checksum.algorithm);
     fs.renameSync(temporary, destination);
   } catch (error) {
