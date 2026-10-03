@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { MinecraftProcessManager } from "../minecraft/process-manager.js";
 import { db } from "../database/db.js";
 
@@ -81,14 +82,15 @@ describe("Minecraft process manager", () => {
     const fakeJavaScript = path.join(root, "fake-java.mjs");
 
     const manager = new MinecraftProcessManager({
-      spawnFn: ((_command, args) => {
+      spawnFn: ((_command: string, args: string[], options: SpawnOptions): ChildProcess => {
         spawnCommand = _command;
         spawnArgs = [...args];
+        expect(options.cwd).toBe(root);
         expect(fakeJavaScript).toMatch(/fake-java\.mjs$/);
         const child = new FakeChild(1234);
         children.push(child);
-        return child as any;
-      }) as any,
+        return child as unknown as ChildProcess;
+      }) as typeof import("node:child_process").spawn,
       restartDelayMs: 0
     });
 
@@ -121,11 +123,11 @@ describe("Minecraft process manager", () => {
 
   it("enforces the crash-loop restart limit without real sleeps", async () => {
     const manager = new MinecraftProcessManager({
-      spawnFn: ((_command, _args, _options) => {
+      spawnFn: ((_command: string, _args: string[], _options: SpawnOptions): ChildProcess => {
         const child = new FakeChild(2000 + children.length);
         children.push(child);
-        return child as any;
-      }) as any,
+        return child as unknown as ChildProcess;
+      }) as typeof import("node:child_process").spawn,
       restartDelayMs: 25,
       stableRunMs: 60_000
     });
