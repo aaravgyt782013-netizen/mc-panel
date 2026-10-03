@@ -1,1 +1,20 @@
-import express from "express";\nimport cookieParser from "cookie-parser";\nimport helmet from "helmet";\nimport cors from "cors";\nimport { env } from "./config/env.js";\nimport { mutationOriginCheck } from "./middleware/security.js";\nimport { csrfProtection } from "./auth/csrf.js";\nimport authRoutes from "./routes/auth.js";\nimport adminRoutes from "./routes/admins.js";\nimport { createServerRoutes } from "./routes/server.js";\nimport { MinecraftProcessManager } from "./minecraft/process-manager.js";\n\nexport function createApp(manager: MinecraftProcessManager = new MinecraftProcessManager()){\n const app=express(); app.disable("x-powered-by"); app.set("trust proxy","loopback");\n app.use(helmet()); app.use(express.json({limit:"2mb"})); app.use(cookieParser());\n app.use(cors({origin:env.panelOrigin,credentials:true})); app.use(mutationOriginCheck); app.use(csrfProtection);\n app.get("/api/health",(_req,res)=>res.json({ok:true,service:"mc-panel",database:"ok"}));\n app.use("/api/auth",authRoutes); app.use("/api/admins",adminRoutes); app.use("/api/server",createServerRoutes(manager));\n return app;\n}\n
+import express from "express";
+import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import cors from "cors";
+import { env } from "./config/env.js";
+import { mutationOriginCheck } from "./middleware/security.js";
+import { csrfProtection } from "./auth/csrf.js";
+import authRoutes from "./routes/auth.js";
+import adminRoutes from "./routes/admins.js";
+import { createServerRoutes } from "./routes/server.js";
+import { MinecraftProcessManager } from "./minecraft/process-manager.js";
+
+export function createApp(manager: MinecraftProcessManager = new MinecraftProcessManager()){
+ const app=express(); app.disable("x-powered-by"); app.set("trust proxy","loopback");
+ app.use(helmet()); app.use(express.json({limit:"2mb"})); app.use(cookieParser());
+ app.use(cors({origin:env.panelOrigin,credentials:true})); app.use(mutationOriginCheck); app.use(csrfProtection);
+ app.get("/api/health",(_req,res)=>res.json({ok:true,service:"mc-panel",database:"ok"}));
+ app.use("/api/auth",authRoutes); app.use("/api/admins",adminRoutes); app.use("/api/server",createServerRoutes(manager));
+ return app;
+}

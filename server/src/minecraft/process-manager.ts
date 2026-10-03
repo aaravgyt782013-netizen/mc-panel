@@ -1,1 +1,100 @@
-import { spawn, type ChildProcess } from "node:child_process";\nimport { EventEmitter } from "node:events";\nimport fs from "node:fs";\nimport path from "node:path";\nimport { env } from "../config/env.js";\nimport { db } from "../database/db.js";\n\nexport type MinecraftStatus = "offline" | "starting" | "running" | "stopping" | "crashed" | "crash-loop";\nexport interface MinecraftStatusSnapshot { status: MinecraftStatus; pid: number | null; startedAt: string | null; stoppedAt: string | null; lastExitCode: number | null; lastCrashAt: string | null; restartCount: number; }\ntype SpawnFn = typeof spawn;\n\nexport class MinecraftProcessManager extends EventEmitter {\n  private child: ChildProcess | null = null;\n  private intentionalStop = false;\n  private restartTimer: NodeJS.Timeout | null = null;\n  private readonly spawnFn: SpawnFn;\n  private readonly now: () => number;\n  private readonly restartDelayMs: number;\n  private readonly stableRunMs: number;\n  private runStartedAt = 0;\n\n  constructor(options: { spawnFn?: SpawnFn; now?: () => number; restartDelayMs?: number; stableRunMs?: number } = {}) {\n    super(); this.spawnFn = options.spawnFn ?? spawn; this.now = options.now ?? Date.now;\n    this.restartDelayMs = options.restartDelayMs ?? 1500; this.stableRunMs = options.stableRunMs ?? 10 * 60_000;\n  }\n\n  status(): MinecraftStatusSnapshot {\n    const row = db.prepare("SELECT status,pid,started_at,stopped_at,last_exit_code,last_crash_at,restart_count FROM server_status WHERE id=1").get() as any;\n    const alive = !!this.child && this.child.exitCode === null && !this.child.killed;\n    return { status: alive ? (row?.status === "stopping" ? "stopping" : "running") : ((row?.status ?? "offline") as MinecraftStatus), pid: alive ? (this.child?.pid ?? null) : null, startedAt: row?.started_at ?? null, stoppedAt: row?.stopped_at ?? null, lastExitCode: row?.last_exit_code ?? null, lastCrashAt: row?.last_crash_at ?? null, restartCount: Number(row?.restart_count ?? 0) };\n  }\n\n  async start(): Promise<MinecraftStatusSnapshot> {\n    if (this.child && this.child.exitCode === null && !this.child.killed) return this.status();\n    if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null; }\n    const root = path.resolve(env.minecraftRoot); fs.mkdirSync(root, { recursive: true });\n    const eulaPath = path.join(root, "eula.txt"); const jarPath = path.join(root, "server.jar");\n    if (!fs.existsSync(eulaPath) || !/^eula\\s*=\\s*true\\s*$/im.test(fs.readFileSync(eulaPath, "utf8"))) throw new Error("Minecraft EULA has not been accepted");\n    if (!fs.existsSync(jarPath)) throw new Error("Minecraft server.jar is not installed");\n    const config = db.prepare("SELECT min_ram_mb,max_ram_mb,aikar_flags FROM server_config WHERE id=1").get() as any;\n    const minRam = Math.max(512, Number(config?.min_ram_mb ?? 1024)); const maxRam = Math.min(env.maxRamMb, Number(config?.max_ram_mb ?? env.maxRamMb));\n    if (minRam > maxRam) throw new Error("Minecraft RAM configuration is invalid");\n    const args = ["-Xms" + minRam + "M", "-Xmx" + maxRam + "M"];\n    if (Number(config?.aikar_flags ?? 1) === 1) args.push("-XX:+UseG1GC","-XX:+ParallelRefProcEnabled","-XX:MaxGCPauseMillis=200","-XX:+UnlockExperimentalVMOptions","-XX:+DisableExplicitGC","-XX:+AlwaysPreTouch","-XX:G1NewSizePercent=30","-XX:G1MaxNewSizePercent=40","-XX:G1HeapRegionSize=8M","-XX:G1ReservePercent=20","-XX:G1HeapWastePercent=5","-XX:G1MixedGCCountTarget=4","-XX:InitiatingHeapOccupancyPercent=15","-XX:G1MixedGCLiveThresholdPercent=90","-XX:G1RSetUpdatingPauseTimePercent=5","-XX:SurvivorRatio=32","-XX:+PerfDisableSharedMem","-XX:MaxTenuringThreshold=1","-Dusing.aikars.flags=https://mcflags.emc.gs","-Daikars.new.flags=true");\n    args.push("-jar","server.jar","--nogui");\n    this.intentionalStop = false; this.updateStatus("starting", process.pid, null, null);\n    const child = this.spawnFn("java", args, { cwd: root, env: { ...process.env }, stdio: ["pipe","pipe","pipe"], shell: false });\n    this.child = child; this.runStartedAt = this.now(); this.updateStatus("running", child.pid ?? null, new Date(this.now()).toISOString(), null); this.emit("status", this.status());\n    child.stdout?.on("data", data => this.emit("console", { stream: "stdout", data: String(data) }));\n    child.stderr?.on("data", data => this.emit("console", { stream: "stderr", data: String(data) }));\n    child.on("error", error => this.emit("console", { stream: "stderr", data: String(error.message) }));\n    child.on("close", (code, signal) => this.handleClose(child, code, signal));\n    return this.status();\n  }\n\n  async stop(): Promise<MinecraftStatusSnapshot> {\n    if (!this.child || this.child.exitCode !== null || this.child.killed) return this.status();\n    this.intentionalStop = true; this.updateStatus("stopping", this.child.pid ?? null, null, null); this.child.stdin?.write("stop\n");\n    setTimeout(() => { if (this.child && this.child.exitCode === null) this.child.kill("SIGTERM"); }, 10_000).unref();\n    return this.status();\n  }\n\n  async restart(): Promise<MinecraftStatusSnapshot> {\n    if (this.child && this.child.exitCode === null && !this.child.killed) {\n      this.intentionalStop = true; this.updateStatus("stopping", this.child.pid ?? null, null, null); this.child.stdin?.write("stop\n");\n      await new Promise<void>(resolve => { const current = this.child; const onClose = () => { current?.removeListener("close", onClose); resolve(); }; current?.once("close", onClose); setTimeout(() => { if (current && current.exitCode === null) current.kill("SIGTERM"); }, 10_000).unref(); });\n    }\n    this.intentionalStop = false; return this.start();\n  }\n\n  async kill(): Promise<MinecraftStatusSnapshot> {\n    if (!this.child || this.child.exitCode !== null || this.child.killed) return this.status();\n    this.intentionalStop = true; this.updateStatus("stopping", this.child.pid ?? null, null, null); this.child.kill("SIGKILL"); return this.status();\n  }\n\n  sendCommand(command: string) {\n    const value = command.trim();\n    if (!value || value.length > 2048 || /[\r\n]/.test(value)) throw new Error("Invalid console command");\n    if (!this.child || this.child.exitCode !== null || this.child.killed || !this.child.stdin?.writable) throw new Error("Minecraft server is not running");\n    this.child.stdin.write(value + "\n"); this.emit("console", { stream: "command", data: value + "\n" });\n  }\n\n  private handleClose(child: ChildProcess, code: number | null, signal: NodeJS.Signals | null) {\n    if (this.child !== child) return; this.child = null; const stoppedAt = new Date(this.now()).toISOString();\n    const wasIntentional = this.intentionalStop; this.intentionalStop = false;\n    if (wasIntentional) { this.updateStatus("offline", null, null, stoppedAt, code); this.emit("status", this.status()); return; }\n    const config = db.prepare("SELECT crash_restart_enabled,max_crash_restarts FROM server_config WHERE id=1").get() as any;\n    const current = this.status(); const restartCount = current.restartCount + 1; const canRestart = Number(config?.crash_restart_enabled ?? 1) === 1 && restartCount <= Number(config?.max_crash_restarts ?? 3);\n    this.updateStatus(canRestart ? "crashed" : "crash-loop", null, null, stoppedAt, code, stoppedAt, restartCount);\n    this.emit("console", { stream: "system", data: "Minecraft exited (code=" + (code ?? "null") + ", signal=" + (signal ?? "none") + ")\n" }); this.emit("status", this.status());\n    if (this.runStartedAt && this.now() - this.runStartedAt >= this.stableRunMs) db.prepare("UPDATE server_status SET restart_count=0 WHERE id=1").run();\n    if (canRestart) { this.restartTimer = setTimeout(() => { this.restartTimer = null; void this.start().catch(error => this.emit("console", { stream: "system", data: "Auto-restart failed: " + (error instanceof Error ? error.message : String(error)) + "\n" })); }, this.restartDelayMs); this.restartTimer.unref(); }\n  }\n\n  private updateStatus(status: MinecraftStatus, pid: number | null, startedAt: string | null, stoppedAt: string | null, exitCode: number | null = null, lastCrashAt: string | null = null, restartCount?: number) {\n    const current = db.prepare("SELECT restart_count FROM server_status WHERE id=1").get() as any;\n    db.prepare("UPDATE server_status SET status=?,pid=?,started_at=COALESCE(?,started_at),stopped_at=COALESCE(?,stopped_at),last_exit_code=?,last_crash_at=COALESCE(?,last_crash_at),restart_count=?,updated_at=CURRENT_TIMESTAMP WHERE id=1").run(status,pid,startedAt,stoppedAt,exitCode,lastCrashAt,restartCount ?? Number(current?.restart_count ?? 0));\n  }\n}\n
+import { spawn, type ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import path from "node:path";
+import { env } from "../config/env.js";
+import { db } from "../database/db.js";
+
+export type MinecraftStatus = "offline" | "starting" | "running" | "stopping" | "crashed" | "crash-loop";
+export interface MinecraftStatusSnapshot { status: MinecraftStatus; pid: number | null; startedAt: string | null; stoppedAt: string | null; lastExitCode: number | null; lastCrashAt: string | null; restartCount: number; }
+type SpawnFn = typeof spawn;
+
+export class MinecraftProcessManager extends EventEmitter {
+  private child: ChildProcess | null = null;
+  private intentionalStop = false;
+  private restartTimer: NodeJS.Timeout | null = null;
+  private readonly spawnFn: SpawnFn;
+  private readonly now: () => number;
+  private readonly restartDelayMs: number;
+  private readonly stableRunMs: number;
+  private runStartedAt = 0;
+
+  constructor(options: { spawnFn?: SpawnFn; now?: () => number; restartDelayMs?: number; stableRunMs?: number } = {}) {
+    super(); this.spawnFn = options.spawnFn ?? spawn; this.now = options.now ?? Date.now;
+    this.restartDelayMs = options.restartDelayMs ?? 1500; this.stableRunMs = options.stableRunMs ?? 10 * 60_000;
+  }
+
+  status(): MinecraftStatusSnapshot {
+    const row = db.prepare("SELECT status,pid,started_at,stopped_at,last_exit_code,last_crash_at,restart_count FROM server_status WHERE id=1").get() as any;
+    const alive = !!this.child && this.child.exitCode === null && !this.child.killed;
+    return { status: alive ? (row?.status === "stopping" ? "stopping" : "running") : ((row?.status ?? "offline") as MinecraftStatus), pid: alive ? (this.child?.pid ?? null) : null, startedAt: row?.started_at ?? null, stoppedAt: row?.stopped_at ?? null, lastExitCode: row?.last_exit_code ?? null, lastCrashAt: row?.last_crash_at ?? null, restartCount: Number(row?.restart_count ?? 0) };
+  }
+
+  async start(): Promise<MinecraftStatusSnapshot> {
+    if (this.child && this.child.exitCode === null && !this.child.killed) return this.status();
+    if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null; }
+    const configuredRoot = process.env.MINECRAFT_ROOT?.trim() || env.minecraftRoot;
+    const root = path.resolve(configuredRoot); fs.mkdirSync(root, { recursive: true });
+    const eulaPath = path.join(root, "eula.txt"); const jarPath = path.join(root, "server.jar");
+    if (!fs.existsSync(eulaPath) || !/^eula\s*=\s*true\s*$/im.test(fs.readFileSync(eulaPath, "utf8"))) throw new Error("Minecraft EULA has not been accepted");
+    if (!fs.existsSync(jarPath)) throw new Error("Minecraft server.jar is not installed");
+    const config = db.prepare("SELECT min_ram_mb,max_ram_mb,aikar_flags FROM server_config WHERE id=1").get() as any;
+    const minRam = Math.max(512, Number(config?.min_ram_mb ?? 1024)); const maxRam = Math.min(env.maxRamMb, Number(config?.max_ram_mb ?? env.maxRamMb));
+    if (minRam > maxRam) throw new Error("Minecraft RAM configuration is invalid");
+    const args = ["-Xms" + minRam + "M", "-Xmx" + maxRam + "M"];
+    if (Number(config?.aikar_flags ?? 1) === 1) args.push("-XX:+UseG1GC","-XX:+ParallelRefProcEnabled","-XX:MaxGCPauseMillis=200","-XX:+UnlockExperimentalVMOptions","-XX:+DisableExplicitGC","-XX:+AlwaysPreTouch","-XX:G1NewSizePercent=30","-XX:G1MaxNewSizePercent=40","-XX:G1HeapRegionSize=8M","-XX:G1ReservePercent=20","-XX:G1HeapWastePercent=5","-XX:G1MixedGCCountTarget=4","-XX:InitiatingHeapOccupancyPercent=15","-XX:G1MixedGCLiveThresholdPercent=90","-XX:G1RSetUpdatingPauseTimePercent=5","-XX:SurvivorRatio=32","-XX:+PerfDisableSharedMem","-XX:MaxTenuringThreshold=1","-Dusing.aikars.flags=https://mcflags.emc.gs","-Daikars.new.flags=true");
+    args.push("-jar","server.jar","--nogui");
+    this.intentionalStop = false; this.updateStatus("starting", process.pid, null, null);
+    const child = this.spawnFn("java", args, { cwd: root, env: { ...process.env }, stdio: ["pipe","pipe","pipe"], shell: false });
+    this.child = child; this.runStartedAt = this.now(); this.updateStatus("running", child.pid ?? null, new Date(this.now()).toISOString(), null); this.emit("status", this.status());
+    child.stdout?.on("data", data => this.emit("console", { stream: "stdout", data: String(data) }));
+    child.stderr?.on("data", data => this.emit("console", { stream: "stderr", data: String(data) }));
+    child.on("error", error => this.emit("console", { stream: "stderr", data: String(error.message) }));
+    child.on("close", (code, signal) => this.handleClose(child, code, signal));
+    return this.status();
+  }
+
+  async stop(): Promise<MinecraftStatusSnapshot> {
+    if (!this.child || this.child.exitCode !== null || this.child.killed) return this.status();
+    this.intentionalStop = true; this.updateStatus("stopping", this.child.pid ?? null, null, null); this.child.stdin?.write("stop\n");
+    setTimeout(() => { if (this.child && this.child.exitCode === null) this.child.kill("SIGTERM"); }, 10_000).unref();
+    return this.status();
+  }
+
+  async restart(): Promise<MinecraftStatusSnapshot> {
+    if (this.child && this.child.exitCode === null && !this.child.killed) {
+      this.intentionalStop = true; this.updateStatus("stopping", this.child.pid ?? null, null, null); this.child.stdin?.write("stop\n");
+      await new Promise<void>(resolve => { const current = this.child; const onClose = () => { current?.removeListener("close", onClose); resolve(); }; current?.once("close", onClose); setTimeout(() => { if (current && current.exitCode === null) current.kill("SIGTERM"); }, 10_000).unref(); });
+    }
+    this.intentionalStop = false; return this.start();
+  }
+
+  async kill(): Promise<MinecraftStatusSnapshot> {
+    if (!this.child || this.child.exitCode !== null || this.child.killed) return this.status();
+    this.intentionalStop = true; this.updateStatus("stopping", this.child.pid ?? null, null, null); this.child.kill("SIGKILL"); return this.status();
+  }
+
+  sendCommand(command: string) {
+    const value = command.trim();
+    if (!value || value.length > 2048 || /[\r\n]/.test(value)) throw new Error("Invalid console command");
+    if (!this.child || this.child.exitCode !== null || this.child.killed || !this.child.stdin?.writable) throw new Error("Minecraft server is not running");
+    this.child.stdin.write(value + "\n"); this.emit("console", { stream: "command", data: value + "\n" });
+  }
+
+  private handleClose(child: ChildProcess, code: number | null, signal: NodeJS.Signals | null) {
+    if (this.child !== child) return; this.child = null; const stoppedAt = new Date(this.now()).toISOString();
+    const wasIntentional = this.intentionalStop; this.intentionalStop = false;
+    if (wasIntentional) { this.updateStatus("offline", null, null, stoppedAt, code); this.emit("status", this.status()); return; }
+    const config = db.prepare("SELECT crash_restart_enabled,max_crash_restarts FROM server_config WHERE id=1").get() as any;
+    const current = this.status(); const restartCount = current.restartCount + 1; const canRestart = Number(config?.crash_restart_enabled ?? 1) === 1 && restartCount <= Number(config?.max_crash_restarts ?? 3);
+    this.updateStatus(canRestart ? "crashed" : "crash-loop", null, null, stoppedAt, code, stoppedAt, restartCount);
+    this.emit("console", { stream: "system", data: "Minecraft exited (code=" + (code ?? "null") + ", signal=" + (signal ?? "none") + ")\n" }); this.emit("status", this.status());
+    if (this.runStartedAt && this.now() - this.runStartedAt >= this.stableRunMs) db.prepare("UPDATE server_status SET restart_count=0 WHERE id=1").run();
+    if (canRestart) { this.restartTimer = setTimeout(() => { this.restartTimer = null; void this.start().catch(error => this.emit("console", { stream: "system", data: "Auto-restart failed: " + (error instanceof Error ? error.message : String(error)) + "\n" })); }, this.restartDelayMs); this.restartTimer.unref(); }
+  }
+
+  private updateStatus(status: MinecraftStatus, pid: number | null, startedAt: string | null, stoppedAt: string | null, exitCode: number | null = null, lastCrashAt: string | null = null, restartCount?: number) {
+    const current = db.prepare("SELECT restart_count FROM server_status WHERE id=1").get() as any;
+    db.prepare("UPDATE server_status SET status=?,pid=?,started_at=COALESCE(?,started_at),stopped_at=COALESCE(?,stopped_at),last_exit_code=?,last_crash_at=COALESCE(?,last_crash_at),restart_count=?,updated_at=CURRENT_TIMESTAMP WHERE id=1").run(status,pid,startedAt,stoppedAt,exitCode,lastCrashAt,restartCount ?? Number(current?.restart_count ?? 0));
+  }
+}
