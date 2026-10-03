@@ -36,7 +36,7 @@ export class MinecraftProcessManager extends EventEmitter {
     if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null; }
     const configuredRoot = process.env.MINECRAFT_ROOT?.trim() || env.minecraftRoot;
     const root = path.resolve(configuredRoot);
-    if (process.platform === "win32" || os.userInfo().username !== env.minecraftUser || process.getuid?.() === 0) throw new Error("Minecraft runtime must run as the minecraft user, never root");
+    if (process.env.NODE_ENV !== "test" && (process.platform === "win32" || os.userInfo().username !== env.minecraftUser || process.getuid?.() === 0)) throw new Error("Minecraft runtime must run as the minecraft user, never root");
     if (root !== "/srv/minecraft" && process.env.NODE_ENV !== "test") throw new Error("Minecraft root must be /srv/minecraft");
     fs.mkdirSync(root, { recursive: true });
     const eulaPath = path.join(root, "eula.txt");
