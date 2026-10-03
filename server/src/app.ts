@@ -9,12 +9,13 @@ import authRoutes from "./routes/auth.js";
 import adminRoutes from "./routes/admins.js";
 import { createServerRoutes } from "./routes/server.js";
 import { MinecraftProcessManager } from "./minecraft/process-manager.js";
+import versionsRoutes from "./routes/versions.js";
 
 export function createApp(manager: MinecraftProcessManager = new MinecraftProcessManager()){
  const app=express(); app.disable("x-powered-by"); app.set("trust proxy","loopback");
  app.use(helmet()); app.use(express.json({limit:"2mb"})); app.use(cookieParser());
  app.use(cors({origin:env.panelOrigin,credentials:true})); app.use(mutationOriginCheck); app.use(csrfProtection);
  app.get("/api/health",(_req,res)=>res.json({ok:true,service:"mc-panel",database:"ok"}));
- app.use("/api/auth",authRoutes); app.use("/api/admins",adminRoutes); app.use("/api/server",createServerRoutes(manager));
+ app.use("/api/auth",authRoutes); app.use("/api/admins",adminRoutes); app.use("/api/server",createServerRoutes(manager)); app.use("/api/versions",versionsRoutes);
  return app;
 }
