@@ -51,7 +51,8 @@ describe("Group 2 authentication security",()=>{
  it("enforces per-account login rate limiting with a generic response",async()=>{
    const email="limited@example.com";db.prepare("DELETE FROM login_attempts").run();
    for(let i=0;i<5;i++)recordLoginAttempt("10.0.0."+i,email);
-   const r=await request(app).post("/api/auth/login").set("Cookie",cookie("mc_csrf",await csrf())).set("X-CSRF-Token",await csrf()).send({email,password:"WrongPassword123!"});
+   const token=await csrf();
+   const r=await request(app).post("/api/auth/login").set("Cookie",cookie("mc_csrf",token)).set("X-CSRF-Token",token).send({email,password:"WrongPassword123!"});
    expect([401,429]).toContain(r.status);
    // Account throttling is asserted directly even if a new CSRF token is issued for the request.
    expect((db.prepare("SELECT COUNT(*) c FROM login_attempts WHERE account_key=?").get(email) as any).c).toBeGreaterThanOrEqual(5);
