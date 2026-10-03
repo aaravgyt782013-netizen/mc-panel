@@ -2,7 +2,6 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { env } from "../config/env.js";
 import { db } from "../database/db.js";
 
@@ -56,8 +55,7 @@ export class MinecraftProcessManager extends EventEmitter {
       args.push(...argFiles.map(x => "@" + x), "nogui");
     } else args.push("-jar","server.jar","--nogui");
     this.intentionalStop = false; this.updateStatus("starting", process.pid, null, null);
-    const runtime = os.userInfo();
-    const child = this.spawnFn("java", args, { cwd: root, env: { ...process.env }, stdio: ["pipe","pipe","pipe"], shell: false, uid: runtime.uid, gid: runtime.gid });
+    const child = this.spawnFn("java", args, { cwd: root, env: { ...process.env }, stdio: ["pipe","pipe","pipe"], shell: false });
     this.child = child; this.runStartedAt = this.now(); this.updateStatus("running", child.pid ?? null, new Date(this.now()).toISOString(), null); this.emit("status", this.status());
     child.stdout?.on("data", data => this.emit("console", { stream: "stdout", data: String(data) }));
     child.stderr?.on("data", data => this.emit("console", { stream: "stderr", data: String(data) }));

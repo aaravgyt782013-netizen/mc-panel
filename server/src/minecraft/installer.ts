@@ -27,7 +27,7 @@ const OFFICIAL_HOSTS = new Set([
   "files.minecraftforge.net"
 ]);
 
-function assertSafeUrl(raw: string): URL {
+export function assertSafeUrl(raw: string): URL {
   const url = new URL(raw);
   if (url.protocol !== "https:" || !OFFICIAL_HOSTS.has(url.hostname)) {
     throw new Error("Untrusted HTTPS download URL");
@@ -46,7 +46,7 @@ async function json<T>(rawUrl: string): Promise<T> {
   return await response(rawUrl).then(r => r.json() as Promise<T>);
 }
 
-function verifyChecksum(filePath: string, expected: string, algorithm: "sha1" | "sha256"): void {
+export function verifyChecksum(filePath: string, expected: string, algorithm: "sha1" | "sha256"): void {
   const actual = crypto.createHash(algorithm).update(fs.readFileSync(filePath)).digest("hex");
   if (actual.toLowerCase() !== expected.trim().toLowerCase()) {
     throw new Error(algorithm.toUpperCase() + " checksum mismatch");
