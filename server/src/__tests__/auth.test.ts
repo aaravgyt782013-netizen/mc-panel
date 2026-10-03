@@ -1,11 +1,20 @@
-import {beforeAll,afterAll,beforeEach,describe,expect,it,vi} from "vitest";
+import {beforeAll,afterAll,describe,expect,it,vi} from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 
-const dbPath=path.join(fs.mkdtempSync(path.join(os.tmpdir(),"mc-panel-test-")),"panel.db");
-process.env.NODE_ENV="test";process.env.DATABASE_PATH=dbPath;process.env.PANEL_ORIGIN="https://panel.test";process.env.HOST="127.0.0.1";process.env.PORT="0";
+const testRoot=fs.mkdtempSync(path.join(os.tmpdir(),"mc-panel-test-"));
+const dbPath=path.join(testRoot,"panel.db");
+const minecraftRoot=path.join(testRoot,"minecraft");
+fs.mkdirSync(minecraftRoot,{recursive:true});
+process.env.NODE_ENV="test";
+process.env.DATABASE_PATH=dbPath;
+process.env.MINECRAFT_ROOT=minecraftRoot;
+process.env.PANEL_ORIGIN="https://panel.test";
+process.env.HOST="127.0.0.1";
+process.env.PORT="3000";
+process.env.SESSION_SECRET="test-only-session-secret-32-bytes-minimum-value";
 
 const {db}=await import("../database/db.js");
 const {createApp}=await import("../app.js");
@@ -19,7 +28,7 @@ const csrf=async(): Promise<string> => { const r=await request(app).get("/api/au
 const cookie=(name:string,value:string)=>name+"="+value;
 
 beforeAll(async()=>{const log=vi.spyOn(console,"log").mockImplementation(()=>{});await ensureSetupToken();log.mockRestore();});
-afterAll(()=>{db.close();fs.rmSync(path.dirname(dbPath),{recursive:true,force:true});});
+afterAll(()=>{db.close();fs.rmSync(testRoot,{recursive:true,force:true});});
 
 describe("Group 2 authentication security",()=>{
  it("locks setup permanently after owner exists",async()=>{
