@@ -23,5 +23,6 @@ export const env = {
   minecraftRoot: valueOrFallback("MINECRAFT_ROOT", "/srv/minecraft"),
   minecraftUser: valueOrFallback("MINECRAFT_USER", "minecraft"),
   maxRamMb: positiveInt("MAX_RAM_MB", 6144),
+  maxUploadBytes: positiveInt("MAX_UPLOAD_BYTES", 10 * 1024 * 1024),
   cookieSecure: true
 };

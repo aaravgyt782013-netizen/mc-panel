@@ -12,12 +12,13 @@ import { MinecraftProcessManager } from "./minecraft/process-manager.js";
 import versionsRoutes from "./routes/versions.js";
 import propertiesRoutes from "./routes/properties.js";
 import { createPlayerRoutes } from "./routes/players.js";
+import filesRoutes from "./routes/files.js";
 
 export function createApp(manager: MinecraftProcessManager = new MinecraftProcessManager()){
  const app=express(); app.disable("x-powered-by"); app.set("trust proxy","loopback");
  app.use(helmet()); app.use(express.json({limit:"2mb"})); app.use(cookieParser());
  app.use(cors({origin:env.panelOrigin,credentials:true})); app.use(mutationOriginCheck); app.use(csrfProtection);
  app.get("/api/health",(_req,res)=>res.json({ok:true,service:"mc-panel",database:"ok"}));
- app.use("/api/auth",authRoutes); app.use("/api/admins",adminRoutes); app.use("/api/server",createServerRoutes(manager)); app.use("/api/versions",versionsRoutes); app.use("/api/properties",propertiesRoutes); app.use("/api/players",createPlayerRoutes(manager));
+ app.use("/api/auth",authRoutes); app.use("/api/admins",adminRoutes); app.use("/api/server",createServerRoutes(manager)); app.use("/api/versions",versionsRoutes); app.use("/api/properties",propertiesRoutes); app.use("/api/players",createPlayerRoutes(manager)); app.use("/api/files",filesRoutes);
  return app;
 }
