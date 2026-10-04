@@ -1,0 +1,40 @@
+name: Group 2 auth tests
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    env:
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: 3000
+      PANEL_ORIGIN: https://panel.test
+      SESSION_SECRET: ci-only-session-secret-32-bytes-minimum-value
+      SESSION_TTL_HOURS: 24
+      SETUP_TOKEN_TTL_MINUTES: 15
+      MINECRAFT_USER: minecraft
+      MAX_RAM_MB: 6144
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: node --version
+      - run: npm --version
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "package-lock.json not present yet; using npm install. Commit the lockfile to switch CI to npm ci."
+            npm install
+          fi
+      - run: npm run typecheck
+      - run: npm test --workspace server
