@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --setupFiles src/__tests__/setup.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
