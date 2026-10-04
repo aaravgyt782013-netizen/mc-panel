@@ -30,6 +30,13 @@ jobs:
           package-manager-cache: false
       - run: node --version
       - run: npm --version
-      - run: npm install
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "package-lock.json not present yet; using npm install. Commit the lockfile to switch CI to npm ci."
+            npm install
+          fi
       - run: npm run typecheck
       - run: npm test --workspace server
