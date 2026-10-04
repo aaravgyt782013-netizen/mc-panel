@@ -3,6 +3,12 @@ import rateLimit from "express-rate-limit";
 import { env } from "../config/env.js";
 
 export const authRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false });
+export const createGlobalApiRateLimiter = (limit = 300): RequestHandler => rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit,
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 export const mutationOriginCheck: RequestHandler = (req, res, next) => {
   if (!["POST","PUT","PATCH","DELETE"].includes(req.method)) return next();

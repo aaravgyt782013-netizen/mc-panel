@@ -1,7 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
-import { createGlobalApiRateLimiter } from "../app.js";
+import { createGlobalApiRateLimiter } from "../middleware/security.js";
 import { operationalError } from "../middleware/errors.js";
 
 describe("security hardening", () => {
@@ -28,15 +28,20 @@ describe("security hardening", () => {
     errorSpy.mockRestore();
   });
 
-  it("marks EULA, RAM, and install routes as owner-protected", async () => {
+  it("protects EULA, RAM, and install routes with requireOwner", async () => {
     const source = await import("../routes/versions.js");
     const router = source.default;
-    const routes = (router as { stack: Array<{ route?: { path?: string; methods?: Record<string, boolean> }; handle?: unknown }> }).stack;
+    const routes = (router as {
+      stack: Array<{
+        route?: { path?: string; methods?: Record<string, boolean>; stack?: Array<{ handle?: unknown }> };
+      }>
+    }).stack;
     for (const path of ["/eula", "/ram", "/install"]) {
       const layer = routes.find(item => item.route?.path === path);
       expect(layer?.route?.methods?.post).toBe(true);
-      expect(layer?.handle).toBeDefined();
+      expect(layer?.route?.stack?.length).toBe(2);
+      expect(layer?.route?.stack?.[0]?.handle).toBeDefined();
+      expect(layer?.route?.stack?.[1]?.handle).toBeDefined();
     }
-    expect(routes.filter(item => ["/eula", "/ram", "/install"].includes(item.route?.path ?? "")).length).toBe(3);
   });
 });
