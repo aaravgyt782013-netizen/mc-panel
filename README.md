@@ -19,3 +19,8 @@ The panel service and Minecraft Java process both run as the single non-root `mi
 - dev: active development branch
 
 Do not deploy unfinished dev changes to production.
+
+
+## Admin console-command access
+
+Anyone with admin access can send arbitrary Minecraft console commands through the panel. Treat admin accounts as trusted server operators: a console command can change server configuration, permissions, worlds, and other server state.

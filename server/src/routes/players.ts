@@ -5,6 +5,7 @@ import { requireAuth } from "../auth/middleware.js";
 import { audit } from "../auth/audit.js";
 import { env } from "../config/env.js";
 import type { MinecraftProcessManager } from "../minecraft/process-manager.js";
+import { operationalError } from "../middleware/errors.js";
 
 const nameRe=/^[A-Za-z0-9_]{3,16}$/;
 const reasonRe=/^[^\r\n]{0,256}$/;
@@ -44,6 +45,6 @@ function command(manager: MinecraftProcessManager, req: Request, res: Response, 
     manager.sendCommand(prefix+" "+name+(withReason&&reason?" "+reason:""));
     audit(auditAction,req.authUser!.id,req,name,reason?{reason}:undefined);
     res.json({ok:true});
-  }catch(e){res.status(409).json({error:e instanceof Error?e.message:"Unable to execute player command"})}
+  }catch(e){operationalError(res,e,409,"Unable to execute player command")}
 }
 export default router;

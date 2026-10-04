@@ -5,6 +5,7 @@ import path from "node:path";
 import { requireAuth, requireOwner } from "../auth/middleware.js";
 import { audit } from "../auth/audit.js";
 import { env } from "../config/env.js";
+import { operationalError } from "../middleware/errors.js";
 
 export type PluginKind = "plugin" | "mod";
 const MODRINTH_API = "https://api.modrinth.com";
@@ -63,7 +64,7 @@ export async function downloadAndVerifyModrinth(url: string, expectedHash: strin
   return data;
 }
 router.get("/installed", (req,res) => {
-  try { const k=kind(req.query.kind); res.json({kind:k,files:installed(k)}); } catch(e) { res.status(400).json({error:e instanceof Error?e.message:"Invalid request"}); }
+  try { const k=kind(req.query.kind); res.json({kind:k,files:installed(k)}); } catch(e) { operationalError(res,e,400,"Invalid plugin/mod request"); }
 });
 router.get("/modrinth/search", async (req,res) => {
   try {
@@ -72,7 +73,7 @@ router.get("/modrinth/search", async (req,res) => {
     const facets=encodeURIComponent(JSON.stringify([[k==="plugin"?"all_project_types:plugin":"project_type:mod"]]));
     const data=await modrinthJson<{hits:unknown[];total_hits:number}>(MODRINTH_API+"/v2/search?query="+encodeURIComponent(q)+"&facets="+facets+"&limit=20");
     res.json({kind:k,...data});
-  } catch(e) { res.status(502).json({error:e instanceof Error?e.message:"Modrinth search failed"}); }
+  } catch(e) { operationalError(res,e,502,"Modrinth search failed"); }
 });
 router.post("/upload", requireOwner, express.raw({type:"application/octet-stream",limit:MAX_PLUGIN_BYTES}), (req:Request,res:Response) => {
   try {
@@ -86,7 +87,7 @@ router.post("/upload", requireOwner, express.raw({type:"application/octet-stream
     try { fs.writeFileSync(temp,body,{mode:0o640}); fs.renameSync(temp,target); } finally { fs.rmSync(temp,{force:true}); }
     audit("PLUGIN_UPLOAD",req.authUser!.id,req,filename,{kind:k,bytes:body.length});
     res.status(201).json({ok:true,kind:k,name:filename,bytes:body.length});
-  } catch(e) { res.status(400).json({error:e instanceof Error?e.message:"Unable to upload JAR"}); }
+  } catch(e) { operationalError(res,e,400,"Unable to upload JAR"); }
 });
 router.post("/toggle", requireOwner, (req,res) => {
   try {
@@ -97,7 +98,7 @@ router.post("/toggle", requireOwner, (req,res) => {
     if (fs.existsSync(target)) return res.status(409).json({error:"Target JAR already exists"});
     fs.renameSync(source,target); audit(enable?"PLUGIN_ENABLE":"PLUGIN_DISABLE",req.authUser!.id,req,name,{kind:k});
     res.json({ok:true,kind:k,name:target.split(path.sep).pop(),enabled:enable});
-  } catch(e) { res.status(400).json({error:e instanceof Error?e.message:"Unable to toggle JAR"}); }
+  } catch(e) { operationalError(res,e,400,"Unable to toggle JAR"); }
 });
 router.post("/modrinth/install", requireOwner, async (req,res) => {
   try {
@@ -117,6 +118,6 @@ router.post("/modrinth/install", requireOwner, async (req,res) => {
     try { fs.writeFileSync(temp,data,{mode:0o640}); fs.renameSync(temp,target); } finally { fs.rmSync(temp,{force:true}); }
     audit("MODRINTH_INSTALL",req.authUser!.id,req,projectId,{kind:k,versionId,filename,bytes:data.length,sha512:file.hashes.sha512});
     res.status(201).json({ok:true,kind:k,projectId,versionId,name:filename,bytes:data.length});
-  } catch(e) { res.status(400).json({error:e instanceof Error?e.message:"Unable to install Modrinth file"}); }
+  } catch(e) { operationalError(res,e,400,"Unable to install Modrinth file"); }
 });
 export default router;
