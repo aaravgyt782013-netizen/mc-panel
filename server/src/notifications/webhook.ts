@@ -1,8 +1,16 @@
 import crypto from "node:crypto";
 import { db } from "../database/db.js";
+
 export type WebhookEvent="start"|"stop"|"crash"|"test";
-const WEBHOOK_PATH=/^\/api\/webhooks\/[^/]+\/[^/]+\/?$/;
-export function validateDiscordWebhookUrl(value:string):string{if(!/^https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/[^/]+\/[^/?#]+\/?$/.test(value))throw new Error("Webhook URL must be an HTTPS Discord webhook URL");let url:URL;try{url=new URL(value);}catch{throw new Error("Invalid Discord webhook URL");}if(url.protocol!=="https:"||url.hostname!=="discord.com"&&url.hostname!=="discordapp.com"||url.port||!WEBHOOK_PATH.test(url.pathname)||url.search||url.hash||url.username||url.password)throw new Error("Webhook URL must be an HTTPS Discord webhook URL");return url.toString();}
+const WEBHOOK_PATH=/^\/api\/webhooks\/[0-9]+\/[^/?#]+\/?$/;
+const EXPLICIT_HTTPS_PORT=/^https:\/\/[^/?#]+:\d+(?:[/?#]|$)/;
+
+export function validateDiscordWebhookUrl(value:string):string{
+  let url:URL;
+  try{url=new URL(value);}catch{throw new Error("Invalid Discord webhook URL");}
+  if(url.protocol!=="https:"||(url.hostname!=="discord.com"&&url.hostname!=="discordapp.com")||url.username||url.password||url.port||EXPLICIT_HTTPS_PORT.test(value)||!WEBHOOK_PATH.test(url.pathname)||url.search||url.hash)throw new Error("Webhook URL must be an HTTPS Discord webhook URL");
+  return url.toString();
+}
 export function maskDiscordWebhookUrl(value:string):string{const url=validateDiscordWebhookUrl(value);const parts=url.pathname.split("/").filter(Boolean);return url.origin+"/api/webhooks/"+parts[2]+"/***";}
 function encryptionKey():Buffer{const raw=process.env.WEBHOOK_ENCRYPTION_KEY?.trim();if(!raw)throw new Error("WEBHOOK_ENCRYPTION_KEY is not configured");const key=Buffer.from(raw,"base64");if(key.length!==32)throw new Error("WEBHOOK_ENCRYPTION_KEY must be base64 for exactly 32 bytes");return key;}
 export function encryptWebhookUrl(value:string):string{const url=validateDiscordWebhookUrl(value);const iv=crypto.randomBytes(12);const cipher=crypto.createCipheriv("aes-256-gcm",encryptionKey(),iv);const ciphertext=Buffer.concat([cipher.update(url,"utf8"),cipher.final()]);return [iv.toString("base64"),cipher.getAuthTag().toString("base64"),ciphertext.toString("base64")].join(".");}
