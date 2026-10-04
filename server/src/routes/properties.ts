@@ -11,6 +11,13 @@ const root=()=>path.resolve(process.env.MINECRAFT_ROOT?.trim()||env.minecraftRoo
 const file=()=>path.join(root(),"server.properties");
 const keyRe=/^[A-Za-z0-9._-]{1,64}$/;
 
+export function validateProperties(properties: unknown): properties is Record<string,string> {
+  if(!properties||typeof properties!=="object"||Array.isArray(properties)) return false;
+  const entries=Object.entries(properties);
+  if(entries.length>256) return false;
+  return entries.every(([key,value])=>keyRe.test(key)&&typeof value==="string"&&value.length<=512&&!/[\r\n]/.test(value));
+}
+
 function readProperties(){
   const out:Record<string,string>={};
   if(!fs.existsSync(file())) return out;
@@ -28,12 +35,8 @@ router.post("/",(req,res)=>{
   const status=(db.prepare("SELECT status FROM server_status WHERE id=1").get() as {status:string}).status;
   if(status!=="offline") return res.status(409).json({error:"Stop the Minecraft server before editing server.properties"});
   const properties=req.body?.properties;
-  if(!properties||typeof properties!=="object"||Array.isArray(properties)) return res.status(400).json({error:"properties must be an object"});
+  if(!validateProperties(properties)) return res.status(400).json({error:"Invalid property entry"});
   const entries=Object.entries(properties);
-  if(entries.length>256) return res.status(400).json({error:"Too many properties"});
-  for(const [key,value] of entries){
-    if(!keyRe.test(key)||typeof value!=="string"||value.length>512||/[\r\n]/.test(value)) return res.status(400).json({error:"Invalid property entry"});
-  }
   fs.mkdirSync(root(),{recursive:true});
   const body=entries.sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>k+"="+v).join("\n")+"\n";
   fs.writeFileSync(file(),body,{encoding:"utf8",mode:0o640});

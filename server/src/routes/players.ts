@@ -16,7 +16,7 @@ function readJson(name:string){
   if(!fs.existsSync(p)) return [];
   try { const v=JSON.parse(fs.readFileSync(p,"utf8")); return Array.isArray(v)?v:[]; } catch { return []; }
 }
-function checkName(value:unknown):value is string { return typeof value==="string"&&nameRe.test(value); }
+export function validatePlayerName(value: unknown): value is string { return typeof value==="string"&&nameRe.test(value); }
 function checkReason(value:unknown):value is string { return typeof value==="string"&&reasonRe.test(value); }
 
 export function createPlayerRoutes(manager:MinecraftProcessManager){
@@ -37,7 +37,7 @@ export function createPlayerRoutes(manager:MinecraftProcessManager){
 
 function command(manager: MinecraftProcessManager, req: Request, res: Response, prefix: string, auditAction: string, withReason = false){
   const name=req.body?.name;
-  if(!checkName(name)) return res.status(400).json({error:"Invalid player name"});
+  if(!validatePlayerName(name)) return res.status(400).json({error:"Invalid player name"});
   const reason=req.body?.reason;
   if(withReason&&reason!==undefined&&!checkReason(reason)) return res.status(400).json({error:"Invalid reason"});
   try{
