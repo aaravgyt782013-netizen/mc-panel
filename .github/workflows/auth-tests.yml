@@ -18,8 +18,6 @@ jobs:
       SESSION_SECRET: ci-only-session-secret-32-bytes-minimum-value
       SESSION_TTL_HOURS: 24
       SETUP_TOKEN_TTL_MINUTES: 15
-      DATABASE_PATH: /tmp/mc-panel-test/panel.db
-      MINECRAFT_ROOT: /tmp/mc-panel-minecraft
       MINECRAFT_USER: minecraft
       MAX_RAM_MB: 6144
     steps:

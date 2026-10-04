@@ -7,6 +7,7 @@ import { schema } from "./schema.js";
 const dbPath = path.resolve(env.databasePath);
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 export const db = new Database(dbPath);
+db.pragma("busy_timeout = 5000");
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 db.exec(schema);

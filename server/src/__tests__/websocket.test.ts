@@ -3,10 +3,7 @@ import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
 import type { MinecraftProcessManager } from "../minecraft/process-manager.js";
 
-process.env.NODE_ENV="test";
 process.env.PANEL_ORIGIN="https://panel.test";
-process.env.DATABASE_PATH="/tmp/mc-panel-websocket-test.db";
-process.env.MINECRAFT_ROOT="/tmp/mc-panel-websocket-minecraft";
 process.env.SESSION_SECRET="websocket-test-session-secret-32-bytes-minimum";
 
 const { attachWebSocket }=await import("../websocket/index.js");
