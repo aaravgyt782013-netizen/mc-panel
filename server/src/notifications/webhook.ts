@@ -5,6 +5,7 @@ export type WebhookEvent="start"|"stop"|"crash"|"test";
 const WEBHOOK_PATH=/^\/api\/webhooks\/[0-9]+\/[^/?#]+\/?$/;
 
 export function validateDiscordWebhookUrl(input:string):URL{
+  if(/^https:\/\/[^/?#]+:\d+(?:[/?#]|$)/.test(input)||/[\s\u0000-\u001F\u007F]/.test(input))throw new Error("Invalid Discord webhook URL");
   try{
     const u=new URL(input);
     if(u.protocol!=="https:"||(u.hostname!=="discord.com"&&u.hostname!=="discordapp.com")||u.username||u.password||u.port||u.search||u.hash||!WEBHOOK_PATH.test(u.pathname)){
