@@ -1,0 +1,1 @@
+import Link from "next/link";import{getSession}from "../../lib";export default async function Account(){const s=await getSession();return <><h1>Account</h1>{s?<><p>Signed in as <b>{String(s.email)}</b></p><Link className="btn" href="/api/auth/logout">Logout</Link></>:<><p className="muted">Sign in to manage your orders.</p><Link className="btn" href="/login">Login</Link></>}</>}

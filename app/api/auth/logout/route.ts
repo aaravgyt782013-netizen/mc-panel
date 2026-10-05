@@ -1,0 +1,1 @@
+import{cookies}from"next/headers";export async function GET(){(await cookies()).delete("session");return Response.redirect(new URL("/login",process.env.NEXT_PUBLIC_STORE_URL||"http://localhost:3000"))}
