@@ -4,25 +4,26 @@ Vercel-native Minecraft store for OdarisMC.
 
 ## Payment and automatic delivery
 
-The store now supports:
+The store uses a UPI-first Razorpay Checkout flow:
 
-- Stripe Checkout for one-time product purchases.
+- Razorpay Standard Checkout with INR orders.
+- UPI is available when enabled for the merchant account, along with other payment methods enabled in Razorpay.
 - Minecraft username collection before payment.
-- Stripe webhook verification using `STRIPE_WEBHOOK_SECRET`.
-- Idempotent order delivery protection using a database lock and delivered status.
-- Automatic Pterodactyl console commands after Stripe confirms payment.
-- Delivery retry support when Pterodactyl is temporarily unavailable.
-- Admin product creation with price, category and Minecraft commands.
-- Recent order and delivery status visibility in the admin page.
+- Server-side Razorpay order creation.
+- Signed Razorpay webhook verification.
+- Server-side verification of the paid order amount and currency.
+- Idempotent delivery protection using a database lock and delivered status.
+- Automatic Minecraft commands after Razorpay confirms the payment.
+- Delivery failure is recorded instead of granting from the browser success page.
 - Optional Discord order notifications.
+
+Razorpay documents real-time webhooks for payment transactions and recommends validating webhook HMAC signatures. The store listens for `order.paid`.
 
 The delivery command can use `{player}`, for example:
 
 ```
 lp user {player} parent set vip
 ```
-
-The store replaces `{player}` with the Minecraft username entered at checkout.
 
 ## Vercel environment variables
 
@@ -33,51 +34,51 @@ Required:
 - `ADMIN_EMAIL` — owner/admin email.
 - `ADMIN_PASSWORD` — owner/admin password.
 - `NEXT_STORE_URL` — deployed Vercel store URL.
-- `STRIPE_SECRET_KEY` — Stripe Sandbox/Test secret key.
-- `STRIPE_WEBHOOK_SECRET` — Stripe webhook signing secret.
-- `PTERODACTYL_URL` — Pterodactyl panel URL.
-- `PTERODACTYL_API_KEY` — Pterodactyl client API key with permission to send server commands.
-- `PTERODACTYL_SERVER_ID` — the Pterodactyl server identifier used for delivery.
+- `RAZORPAY_KEY_ID` — Razorpay key ID.
+- `RAZORPAY_KEY_SECRET` — Razorpay key secret.
+- `RAZORPAY_WEBHOOK_SECRET` — secret configured for the Razorpay webhook.
+- `PTERODACTYL_URL` — Pterodactyl-compatible panel/API URL.
+- `PTERODACTYL_API_KEY` — server API key.
+- `PTERODACTYL_SERVER_ID` — server identifier.
 
 Optional:
 
 - `NEXT_PUBLIC_STORE_NAME` — defaults to OdarisMC.
-- `NEXT_PUBLIC_STORE_URL` — compatibility fallback for the store URL.
+- `NEXT_PUBLIC_STORE_URL` — compatibility fallback.
 - `DISCORD_WEBHOOK_URL` — optional Discord notification webhook.
 
-Never commit real secrets to GitHub and never put private API keys in `NEXT_PUBLIC_` variables.
+Never commit real secrets to GitHub and never put private keys in `NEXT_PUBLIC_` variables.
 
-## Stripe webhook
+## Razorpay webhook
 
-After the Vercel deployment is live, create a Stripe Sandbox webhook destination pointing to:
+After the Vercel deployment is live, create a Razorpay webhook pointing to:
 
 ```
-https://YOUR-STORE-DOMAIN/api/stripe/webhook
+https://YOUR-STORE-DOMAIN/api/razorpay/webhook
 ```
 
-Enable:
+Set a strong webhook secret and enable the successful order event:
 
-- `checkout.session.completed`
-- `checkout.session.async_payment_succeeded`
+- `order.paid`
 
-Copy the endpoint's signing secret into Vercel as `STRIPE_WEBHOOK_SECRET`.
+The webhook secret must match `RAZORPAY_WEBHOOK_SECRET`.
 
-Stripe Checkout is created server-side and the browser success page does not grant the item. Delivery is performed only after the signed Stripe webhook confirms payment.
+Razorpay's dashboard supports webhook configuration under Settings → Webhooks. The webhook must be validated server-side before an order is delivered.
 
 ## Minecraft delivery
 
-The Pterodactyl server receives each configured product command through its client server-command API. If delivery fails, the order is marked `delivery_failed` and Stripe receives an error response so the webhook can be retried.
+The store sends each configured product command to the configured server API. If delivery fails, the order is marked `delivery_failed` so it is not falsely shown as delivered.
 
-## Local/production setup
+## Setup
 
 1. Import the repository into Vercel.
 2. Add the environment variables.
 3. Redeploy after changing environment variables.
-4. Log in to `/login` with the configured admin email/password.
+4. Log in to `/login`.
 5. Open `/admin` and create a product.
 6. Set the product's Minecraft command(s), one per line.
-7. Create the Stripe Sandbox webhook after deployment.
-8. Test checkout with Stripe's official test payment details.
-9. Verify the order reaches `delivered` and the command is executed by the Pterodactyl server.
+7. Create the Razorpay webhook after deployment.
+8. Test with Razorpay test mode before accepting live payments.
+9. Verify the order reaches `delivered` and the command executes on the Minecraft server.
 
-The current implementation uses INR for Stripe Checkout amounts because the OdarisMC store is configured in Indian rupees.
+Use Razorpay's official dashboard/docs for current payment-method availability, onboarding, KYC and settlement requirements.
