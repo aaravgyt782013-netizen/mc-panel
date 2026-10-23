@@ -10,6 +10,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.media.AudioRecordingConfiguration
+import android.os.Handler
+import android.os.Looper
+import android.telephony.PhoneStateListener
 import android.media.ToneGenerator
 import android.os.BatteryManager
 import android.os.Build
@@ -53,6 +57,9 @@ class JarvisForegroundService : Service() {
     private var listeningForCommand = false
     private var pendingCommand: String? = null
     private var pausedByPowerSaver = false
+    private var pausedByOtherRecorder = false
+    private var pausedByCall = false
+    private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
 
     override fun onCreate() {
         super.onCreate()
@@ -75,6 +82,42 @@ class JarvisForegroundService : Service() {
                     }
                 }
             }
+        }
+
+        if (Build.VERSION.SDK_INT >= 29) {
+            audioManager.registerAudioRecordingCallback(object : AudioManager.AudioRecordingCallback() {
+                override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>?) {
+                    val others = configs.orEmpty().any { it.clientPackageName != packageName }
+                    if (others && !pausedByOtherRecorder) {
+                        pausedByOtherRecorder = true
+                        stopEngine()
+                        updateNotification("Paused: another app is using the microphone")
+                    } else if (!others && pausedByOtherRecorder) {
+                        pausedByOtherRecorder = false
+                        if (isEnabled() && !pausedByPowerSaver && !pausedByCall) startWakeListening()
+                    }
+                }
+            }, Handler(Looper.getMainLooper()))
+        }
+        val powerFilter = android.content.IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+        registerReceiver(powerReceiver, powerFilter)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+            try {
+                val telephony = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
+                telephony.listen(object : PhoneStateListener() {
+                    override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                        val inCall = state != TelephonyManager.CALL_STATE_IDLE
+                        if (inCall) {
+                            pausedByCall = true
+                            stopEngine()
+                            updateNotification("Paused during phone call")
+                        } else if (pausedByCall) {
+                            pausedByCall = false
+                            if (isEnabled() && !pausedByPowerSaver && !pausedByOtherRecorder) startWakeListening()
+                        }
+                    }
+                }, PhoneStateListener.LISTEN_CALL_STATE)
+            } catch (_: Exception) {}
         }
     }
 
@@ -145,7 +188,7 @@ class JarvisForegroundService : Service() {
     }
 
     private fun startWakeListening() {
-        if (pausedByPowerSaver || !getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ENABLED, false)) return
+        if (pausedByPowerSaver || pausedByOtherRecorder || pausedByCall || !isEnabled()) return
         try {
             speechService?.stop()
             speechService = null
@@ -278,6 +321,23 @@ class JarvisForegroundService : Service() {
         startWakeListening()
     }
 
+    private fun isEnabled(): Boolean = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
+
+    private val powerReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val power = getSystemService(POWER_SERVICE) as PowerManager
+            if (power.isPowerSaveMode) {
+                pausedByPowerSaver = true
+                stopEngine()
+                updateNotification("Paused: Battery Saver is on")
+                sendState("Standby")
+            } else if (pausedByPowerSaver) {
+                pausedByPowerSaver = false
+                if (isEnabled() && !pausedByOtherRecorder && !pausedByCall) loadModelAndListen()
+            }
+        }
+    }
+
     private fun parseText(json: String?): String =
         try { JSONObject(json ?: "{}").optString("text", "") } catch (_: Exception) { "" }
 
@@ -346,6 +406,7 @@ class JarvisForegroundService : Service() {
 
     override fun onDestroy() {
         stopEngine()
+        try { unregisterReceiver(powerReceiver) } catch (_: Exception) {}
         model?.close()
         model = null
         tts?.stop()
