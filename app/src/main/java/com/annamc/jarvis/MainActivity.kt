@@ -133,7 +133,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 }
             }
             JarvisScreen(status, heard, isListening, bootText, clock, battery, network, history.toList(), level, pitch, rate, pending, countdown, permissionStage, assistantName,
-                { requestStart() }, { stopListening() },
+                { requestStart() }, { stopListening() }, { startTapToTalk() },
                 { level = it; prefs.edit().putString("level", it.name).apply() },
                 { pitch = it; prefs.edit().putFloat("pitch", it).apply(); applyVoice() },
                 { rate = it; prefs.edit().putFloat("rate", it).apply(); applyVoice() },
@@ -252,6 +252,57 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         heard = "Microphone released"
     }
 
+    private fun startTapToTalk() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            respond("Android speech recognition is unavailable on this device, sir.")
+            return
+        }
+        try {
+            recognizer?.cancel()
+            recognizer?.destroy()
+            recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { sr ->
+                sr.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) { status = "LISTENING"; heard = "Listening for one command…" }
+                    override fun onBeginningOfSpeech() { status = "LISTENING"; heard = "Speech detected…" }
+                    override fun onRmsChanged(rmsdB: Float) { }
+                    override fun onBufferReceived(buffer: ByteArray?) { }
+                    override fun onEndOfSpeech() { status = "PROCESSING" }
+                    override fun onError(error: Int) {
+                        status = "VOICE TEST FAILED"
+                        heard = "Tap-to-talk error $error. Check network / Google speech service and microphone permission."
+                        history.add(0, "Tap-to-talk error $error")
+                    }
+                    override fun onResults(results: Bundle?) {
+                        val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                        if (text.isBlank()) { respond("I didn't catch that, sir. Please try again."); return }
+                        heard = "Tap-to-talk: $text"
+                        history.add(0, "Recognized: $text")
+                        handleCommand(text.lowercase(Locale.ROOT))
+                    }
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                        if (!partial.isNullOrBlank()) heard = "Hearing: $partial"
+                    }
+                    override fun onEvent(eventType: Int, params: Bundle?) { }
+                })
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.UK.toLanguageTag())
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                    putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+                }
+                sr.startListening(intent)
+            }
+        } catch (e: Exception) {
+            respond("I couldn't start tap-to-talk, sir: ${e.message ?: "speech service error"}.")
+        }
+    }
+
     private fun handleCommand(command: String) {
         if (pending != null) { respond("Please confirm or cancel the pending action, sir."); return }
         when {
@@ -321,7 +372,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 private fun JarvisScreen(
     status: String, heard: String, listening: Boolean, bootText: String, clock: String, battery: Int, network: String,
     history: List<String>, level: ConfirmLevel, pitch: Float, rate: Float, pending: PendingAction?, countdown: Int,
-    permissionStage: String, assistantName: String, onStart: () -> Unit, onStop: () -> Unit, onLevel: (ConfirmLevel) -> Unit,
+    permissionStage: String, assistantName: String, onStart: () -> Unit, onStop: () -> Unit, onTapToTalk: () -> Unit, onLevel: (ConfirmLevel) -> Unit,
     onPitch: (Float) -> Unit, onRate: (Float) -> Unit, onAssistantName: (String) -> Unit, onConfirm: () -> Unit, onCancel: () -> Unit,
     onPermission: (String) -> Unit, onCountdown: (Int) -> Unit, onSkip: (String) -> Unit, onPermissionStatus: (String) -> Boolean
 ) {
@@ -447,7 +498,7 @@ private fun JarvisScreen(
                                     }
                                 }
                             }
-                            Button(onClick = { if (listening) onStop() else onStart() }, modifier = Modifier.fillMaxWidth().height(60.dp).padding(top = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = if (listening) Color(0xFF9C2942) else Color(0xFF087C91))) {
+                            OutlinedButton(onClick = onTapToTalk, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("🎙  TAP TO TALK • TEST COMMAND ENGINE", color = Cyan, fontWeight = FontWeight.Bold) }\n                            Button(onClick = { if (listening) onStop() else onStart() }, modifier = Modifier.fillMaxWidth().height(60.dp).padding(top = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = if (listening) Color(0xFF9C2942) else Color(0xFF087C91))) {
                                 Text(if (listening) "⏻  POWER OFF  •  STOP LISTENING" else "⏻  POWER ON  •  START JARVIS", fontWeight = FontWeight.Bold, color = Color.White)
                             }
                         }
