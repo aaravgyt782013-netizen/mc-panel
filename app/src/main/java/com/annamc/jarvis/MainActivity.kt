@@ -500,7 +500,8 @@ private fun JarvisScreen(
                                     }
                                 }
                             }
-                            OutlinedButton(onClick = onTapToTalk, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("🎙  TAP TO TALK • TEST COMMAND ENGINE", color = Cyan, fontWeight = FontWeight.Bold) }\n                            Button(onClick = { if (listening) onStop() else onStart() }, modifier = Modifier.fillMaxWidth().height(60.dp).padding(top = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = if (listening) Color(0xFF9C2942) else Color(0xFF087C91))) {
+                            OutlinedButton(onClick = onTapToTalk, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("🎙  TAP TO TALK • TEST COMMAND ENGINE", color = Cyan, fontWeight = FontWeight.Bold) }
+                            Button(onClick = { if (listening) onStop() else onStart() }, modifier = Modifier.fillMaxWidth().height(60.dp).padding(top = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = if (listening) Color(0xFF9C2942) else Color(0xFF087C91))) {
                                 Text(if (listening) "⏻  POWER OFF  •  STOP LISTENING" else "⏻  POWER ON  •  START JARVIS", fontWeight = FontWeight.Bold, color = Color.White)
                             }
                         }
