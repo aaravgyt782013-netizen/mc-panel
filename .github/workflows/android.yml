@@ -16,6 +16,14 @@ jobs:
           java-version: "17"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+      - name: Bundle Vosk small English offline model
+        run: |
+          mkdir -p app/src/main/assets
+          curl -fL --retry 3 https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/vosk-model.zip
+          unzip -q /tmp/vosk-model.zip -d /tmp/vosk-model
+          rm -rf app/src/main/assets/model-en-us
+          mv /tmp/vosk-model/vosk-model-small-en-us-0.15 app/src/main/assets/model-en-us
+          du -sh app/src/main/assets/model-en-us
       - name: Build debug and release APKs
         run: ./gradlew --no-daemon clean assembleDebug assembleRelease
       - name: Verify debug APK signing
