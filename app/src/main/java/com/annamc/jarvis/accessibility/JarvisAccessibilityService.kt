@@ -80,6 +80,7 @@ class JarvisAccessibilityService : AccessibilityService() {
                 "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
                 "quick settings" -> GLOBAL_ACTION_QUICK_SETTINGS
                 "power dialog" -> GLOBAL_ACTION_POWER_DIALOG
+                "screenshot" -> if (android.os.Build.VERSION.SDK_INT >= 28) GLOBAL_ACTION_TAKE_SCREENSHOT else return false
                 else -> return false
             }
             return service.performGlobalAction(id)
