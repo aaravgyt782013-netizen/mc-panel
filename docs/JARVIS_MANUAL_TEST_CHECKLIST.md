@@ -41,3 +41,12 @@ Run on a physical Android device (Android 13+ and Android 14+ are especially imp
 ## Build and automated tests
 - [ ] GitHub Actions build, unit tests, APK signing verification, and artifact upload all succeed.
 - [ ] `AssistantNameMatcherTest` passes for case, punctuation, "hey Jarvis", partial names, unaddressed speech, and name changes.
+
+
+## Urgent live-demo verification (2026-10-23)
+- [ ] CI validates the Vosk model archive has `uuid`, `am/`, and `conf/` at the archive root.
+- [ ] Android SpeechRecognizer starts as the primary wake phrase path; provider availability and offline behavior vary by device.
+- [ ] Test "Jarvis open YouTube" in one sentence, plus "Hi Jarvis", "Hey Jarvis", "OK Jarvis", "Javis", "Jervis", and "service".
+- [ ] Verify partial and final transcripts update Diagnostics while speaking.
+- [ ] Test error recovery by leaving/re-entering the app and toggling listening; confirm the recognizer restarts.
+- [ ] Verify command results on a physical phone; a green build is not proof of real-device command success.
