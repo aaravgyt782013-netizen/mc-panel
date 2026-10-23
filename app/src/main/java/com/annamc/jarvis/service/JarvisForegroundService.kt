@@ -223,11 +223,87 @@ class JarvisForegroundService : Service() {
         StorageService.unpack(applicationContext, "model-en-us", "model-en-us",
             { loaded ->
                 model = loaded
+                diagnostic("model", "Vosk model loaded")
                 startWakeListening()
             },
             { error ->
-                updateNotification("Offline model unavailable: " + (error.message ?: "unpack failed"))
+                diagnostic("model_error", error.message ?: error.javaClass.simpleName)
+                updateNotification("Vosk unavailable; using Android speech fallback")
+                startFallbackWakeRecognition()
             })
+    }
+
+
+    private fun diagnostic(key: String, value: String) {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        prefs.edit().putString("diag_" + key, value).putLong("diag_updated", System.currentTimeMillis()).apply()
+        val old = prefs.getString("diag_log", "").orEmpty().split("\n").filter(String::isNotBlank)
+        val line = SimpleDateFormat("HH:mm:ss", Locale.UK).format(Date()) + " [" + key + "] " + value
+        prefs.edit().putString("diag_log", (old + line).takeLast(50).joinToString("\n")).apply()
+    }
+
+    private fun startFallbackWakeRecognition() {
+        if (!isEnabled() || pausedByPowerSaver || pausedByOtherRecorder || pausedByCall || listeningForCommand) return
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            diagnostic("fallback_error", "Android SpeechRecognizer unavailable")
+            sendState("Error")
+            updateNotification("No speech engine available")
+            return
+        }
+        try {
+            commandRecognizer?.cancel()
+            commandRecognizer?.destroy()
+            commandRecognizer = SpeechRecognizer.createSpeechRecognizer(applicationContext).also { sr ->
+                sr.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: android.os.Bundle?) { diagnostic("mic", "Android speech recognizer ready"); sendState("Standby") }
+                    override fun onBeginningOfSpeech() { diagnostic("mic", "Speech detected") }
+                    override fun onRmsChanged(rmsdB: Float) { getSharedPreferences(PREFS, MODE_PRIVATE).edit().putFloat("diag_audio_level", rmsdB).apply() }
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {}
+                    override fun onError(error: Int) {
+                        diagnostic("fallback_error", "SpeechRecognizer error " + error)
+                        scope.launch(Dispatchers.Main) { delay(900); if (isEnabled() && !listeningForCommand) startFallbackWakeRecognition() }
+                    }
+                    override fun onResults(results: android.os.Bundle?) {
+                        val raw = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                        diagnostic("last_final", raw)
+                        val command = AssistantNameMatcher.extractCommand(raw, assistantName)
+                        if (command != null) {
+                            diagnostic("wake_match", "MATCH: " + raw)
+                            try { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70).startTone(ToneGenerator.TONE_PROP_BEEP, 120) } catch (_: Exception) {}
+                            sendCommand(raw)
+                            sendState("Listening")
+                            if (command.isBlank()) {
+                                listeningForCommand = true
+                                startCommandRecognition()
+                            } else {
+                                sendCommand(command)
+                                handleBackgroundCommand(command)
+                            }
+                        } else {
+                            diagnostic("wake_match", "NO MATCH: " + raw)
+                            scope.launch(Dispatchers.Main) { delay(250); if (isEnabled() && !listeningForCommand) startFallbackWakeRecognition() }
+                        }
+                    }
+                    override fun onPartialResults(partialResults: android.os.Bundle?) {
+                        val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                        if (partial.isNotBlank()) diagnostic("last_partial", partial)
+                    }
+                    override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+                })
+                val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB")
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                }
+                sr.startListening(speechIntent)
+                diagnostic("engine", "Android speech fallback active; may require network/provider")
+            }
+        } catch (e: Exception) {
+            diagnostic("fallback_error", e.message ?: e.javaClass.simpleName)
+            scope.launch(Dispatchers.Main) { delay(1500); if (isEnabled() && !listeningForCommand) startFallbackWakeRecognition() }
+        }
     }
 
     private fun startWakeListening() {
@@ -237,14 +313,16 @@ class JarvisForegroundService : Service() {
         try {
             speechService?.stop()
             speechService = null
-            val loadedModel = model ?: return
+            val loadedModel = model ?: run { startFallbackWakeRecognition(); return }
             // Unconstrained offline recognition permits user-defined names and additional commands.
             val recognizer = Recognizer(loadedModel, 16000.0f)
             speechService = SpeechService(recognizer, 16000.0f).also { it.startListening(wakeListener) }
             updateNotification("Standby — say $assistantName")
             sendState("Standby")
         } catch (error: Exception) {
-            updateNotification("Voice engine error: " + (error.message ?: "unknown"))
+            diagnostic("engine_error", error.message ?: error.javaClass.simpleName)
+            updateNotification("Vosk error; switching to Android speech fallback")
+            startFallbackWakeRecognition()
         }
     }
 
