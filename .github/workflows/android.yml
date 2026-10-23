@@ -23,10 +23,9 @@ jobs:
         run: |
           mkdir -p app/src/main/assets
           curl -fL --retry 3 https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/vosk-model.zip
-          unzip -q /tmp/vosk-model.zip -d /tmp/vosk-model
-          rm -rf app/src/main/assets/model-en-us
-          mv /tmp/vosk-model/vosk-model-small-en-us-0.15 app/src/main/assets/model-en-us
-          du -sh app/src/main/assets/model-en-us
+          rm -f app/src/main/assets/model-en-us.zip
+          cp /tmp/vosk-model.zip app/src/main/assets/model-en-us.zip
+          du -sh app/src/main/assets/model-en-us.zip
       - name: Build debug and release APKs
         run: ./gradlew --no-daemon clean testDebugUnitTest assembleDebug assembleRelease
       - name: Verify debug APK signing
