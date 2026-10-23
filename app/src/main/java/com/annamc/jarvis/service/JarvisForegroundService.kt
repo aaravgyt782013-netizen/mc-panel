@@ -25,6 +25,9 @@ import android.speech.SpeechRecognizer
 import android.telephony.TelephonyManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.annamc.jarvis.MainActivity
 import com.annamc.jarvis.R
 import com.annamc.jarvis.settings.AssistantSettings
@@ -65,6 +68,8 @@ class JarvisForegroundService : Service() {
     private var pausedByCall = false
     private var torchOn = false
     private var stopAfterSpeech = false
+    private var listeningWakeLock: PowerManager.WakeLock? = null
+    private var listeningStartedAt = 0L
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
 
     override fun onCreate() {
@@ -193,6 +198,10 @@ class JarvisForegroundService : Service() {
             return START_NOT_STICKY
         }
         startForeground(NOTIFICATION_ID, buildNotification("Starting offline voice engine"))
+        val watchdog = PeriodicWorkRequestBuilder<JarvisWatchdogWorker>(15, java.util.concurrent.TimeUnit.MINUTES).build()
+        WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
+            "jarvis-background-watchdog", ExistingPeriodicWorkPolicy.UPDATE, watchdog
+        )
         val power = getSystemService(POWER_SERVICE) as PowerManager
         if (power.isPowerSaveMode) {
             pausedByPowerSaver = true
@@ -222,6 +231,7 @@ class JarvisForegroundService : Service() {
 
     private fun startWakeListening() {
         if (listeningForCommand || pausedByPowerSaver || pausedByOtherRecorder || pausedByCall || !isEnabled()) return
+        acquireListeningWakeLock()
         fallbackActive = false
         try {
             speechService?.stop()
@@ -270,6 +280,7 @@ class JarvisForegroundService : Service() {
     }
 
     private fun startCommandRecognition() {
+        acquireListeningWakeLock()
         val loadedModel = model
         if (loadedModel == null) {
             startFallbackCommandRecognition()
@@ -556,7 +567,31 @@ class JarvisForegroundService : Service() {
     private fun pendingFlags(): Int =
         if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE else PendingIntent.FLAG_UPDATE_CURRENT
 
+    private fun acquireListeningWakeLock() {
+        try {
+            val power = getSystemService(POWER_SERVICE) as PowerManager
+            if (listeningWakeLock?.isHeld != true) {
+                listeningWakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JARVIS:VoiceListening").apply {
+                    setReferenceCounted(false)
+                    acquire(10 * 60 * 1000L)
+                }
+                if (listeningStartedAt == 0L) {
+                    listeningStartedAt = System.currentTimeMillis()
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong("listening_started_at", listeningStartedAt).apply()
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun releaseListeningWakeLock() {
+        try { if (listeningWakeLock?.isHeld == true) listeningWakeLock?.release() } catch (_: Exception) {}
+        listeningWakeLock = null
+        listeningStartedAt = 0L
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong("listening_started_at", 0L).apply()
+    }
+
     private fun stopEngine() {
+        releaseListeningWakeLock()
         try { speechService?.stop() } catch (_: Exception) {}
         speechService = null
         try { commandRecognizer?.cancel(); commandRecognizer?.destroy() } catch (_: Exception) {}
