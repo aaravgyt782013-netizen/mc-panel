@@ -40,6 +40,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.annamc.jarvis.settings.AssistantSettings
+import com.annamc.jarvis.voice.AssistantNameMatcher
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -62,6 +66,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var clock by mutableStateOf("--:--:--")
     private var battery by mutableIntStateOf(0)
     private var network by mutableStateOf("CHECKING")
+    private var assistantName by mutableStateOf("Jarvis")
+    private lateinit var assistantSettings: AssistantSettings
     private var pitch by mutableFloatStateOf(0.92f)
     private var rate by mutableFloatStateOf(0.88f)
     private var level by mutableStateOf(ConfirmLevel.ALWAYS)
@@ -77,6 +83,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences("jarvis", MODE_PRIVATE)
+        assistantSettings = AssistantSettings(this)
+        lifecycleScope.launch { assistantSettings.assistantName.collect { assistantName = it } }
         level = runCatching { ConfirmLevel.valueOf(prefs.getString("level", "ALWAYS") ?: "ALWAYS") }.getOrDefault(ConfirmLevel.ALWAYS)
         pitch = prefs.getFloat("pitch", 0.92f)
         rate = prefs.getFloat("rate", 0.88f)
@@ -98,11 +106,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     delay(1000)
                 }
             }
-            JarvisScreen(status, heard, isListening, bootText, clock, battery, network, history.toList(), level, pitch, rate, pending, countdown, permissionStage,
+            JarvisScreen(status, heard, isListening, bootText, clock, battery, network, history.toList(), level, pitch, rate, pending, countdown, permissionStage, assistantName,
                 { requestStart() }, { stopListening() },
                 { level = it; prefs.edit().putString("level", it.name).apply() },
                 { pitch = it; prefs.edit().putFloat("pitch", it).apply(); applyVoice() },
                 { rate = it; prefs.edit().putFloat("rate", it).apply(); applyVoice() },
+                { name -> lifecycleScope.launch { assistantSettings.setAssistantName(name) } },
                 { resolvePending(true) }, { resolvePending(false) }, { requestPermission(it) }, { countdown = it })
         }
     }
@@ -154,12 +163,21 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 override fun onResults(results: Bundle?) {
                     isListening = false
                     val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
-                    heard = words
                     if (pending != null) {
                         if (words in listOf("yes", "confirm", "go ahead", "yes please")) resolvePending(true)
                         else if (words in listOf("no", "cancel", "no thanks")) resolvePending(false)
                         else respond("Please say yes or no, sir.")
-                    } else handleCommand(words)
+                    } else {
+                        val command = AssistantNameMatcher.extractCommand(words, assistantName)
+                        // Unaddressed audio is discarded: do not display it, log it, or execute it.
+                        if (command == null || command.isBlank()) {
+                            status = "SYSTEM STANDBY"
+                            heard = "Awaiting your command"
+                        } else {
+                            heard = command
+                            handleCommand(command)
+                        }
+                    }
                 }
                 override fun onPartialResults(partialResults: Bundle?) {}
                 override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -237,8 +255,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 private fun JarvisScreen(
     status: String, heard: String, listening: Boolean, bootText: String, clock: String, battery: Int, network: String,
     history: List<String>, level: ConfirmLevel, pitch: Float, rate: Float, pending: PendingAction?, countdown: Int,
-    permissionStage: String, onStart: () -> Unit, onStop: () -> Unit, onLevel: (ConfirmLevel) -> Unit,
-    onPitch: (Float) -> Unit, onRate: (Float) -> Unit, onConfirm: () -> Unit, onCancel: () -> Unit,
+    permissionStage: String, assistantName: String, onStart: () -> Unit, onStop: () -> Unit, onLevel: (ConfirmLevel) -> Unit,
+    onPitch: (Float) -> Unit, onRate: (Float) -> Unit, onAssistantName: (String) -> Unit, onConfirm: () -> Unit, onCancel: () -> Unit,
     onPermission: (String) -> Unit, onCountdown: (Int) -> Unit
 ) {
     val transition = rememberInfiniteTransition(label = "reactor")
@@ -292,6 +310,20 @@ private fun JarvisScreen(
                         }
                     }
                 }
+                Text("ASSISTANT NAME", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                OutlinedTextField(
+                    value = assistantName,
+                    onValueChange = onAssistantName,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Assistant name") },
+                    supportingText = { Text("Commands must start with this name. Unaddressed speech is discarded.") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                        focusedBorderColor = Cyan, unfocusedBorderColor = Muted,
+                        focusedLabelColor = Cyan, unfocusedLabelColor = Muted
+                    )
+                )
                 Text("CONFIRMATION LEVEL", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     ConfirmLevel.values().forEach { item -> FilterChip(selected = level == item, onClick = { onLevel(item) }, label = { Text(when(item) { ConfirmLevel.ALWAYS -> "Always"; ConfirmLevel.SENSITIVE_ONLY -> "Sensitive"; ConfirmLevel.NEVER -> "Never" }, fontSize = 10.sp) }) }
