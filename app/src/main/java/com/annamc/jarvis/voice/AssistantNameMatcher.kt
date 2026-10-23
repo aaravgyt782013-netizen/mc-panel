@@ -15,9 +15,11 @@ object AssistantNameMatcher {
         // ASR commonly hears "Jarvis" as "Javis", "service", or "services".
         // Keep fuzzy aliases scoped to the configured Jarvis name and only at the start.
         if (nameWords.size == 1 && nameWords[0] == "jarvis") {
-            if (words.first() in setOf("javis", "javiss", "service", "services", "jarviss", "jarvus", "jarvis")) {
-                words.removeAt(0)
-                return words.joinToString(" ")
+            val aliases = setOf("javis", "javiss", "service", "services", "jervis", "jarviss", "jarvus", "jarvis")
+            var prefix = 0
+            if (words.firstOrNull() in setOf("hi", "hey", "ok", "okay")) prefix++
+            if (words.getOrNull(prefix) in aliases) {
+                return words.drop(prefix + 1).joinToString(" ")
             }
         }
 
