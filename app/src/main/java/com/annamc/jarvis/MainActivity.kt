@@ -2,7 +2,9 @@ package com.annamc.jarvis
 
 import android.Manifest
 import android.content.Context
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -80,8 +82,28 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { refreshPermissions() }
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { refreshPermissions() }
 
+    private val serviceReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                com.annamc.jarvis.service.JarvisForegroundService.ACTION_STATE -> {
+                    val state = intent.getStringExtra(com.annamc.jarvis.service.JarvisForegroundService.EXTRA_STATE).orEmpty()
+                    status = state.uppercase(Locale.ROOT)
+                    isListening = state != "OFF"
+                }
+                com.annamc.jarvis.service.JarvisForegroundService.ACTION_COMMAND -> {
+                    heard = intent.getStringExtra(com.annamc.jarvis.service.JarvisForegroundService.EXTRA_COMMAND).orEmpty()
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val serviceFilter = IntentFilter().apply {
+            addAction(com.annamc.jarvis.service.JarvisForegroundService.ACTION_STATE)
+            addAction(com.annamc.jarvis.service.JarvisForegroundService.ACTION_COMMAND)
+        }
+        ContextCompat.registerReceiver(this, serviceReceiver, serviceFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
         val prefs = getSharedPreferences("jarvis", MODE_PRIVATE)
         assistantSettings = AssistantSettings(this)
         lifecycleScope.launch { assistantSettings.assistantName.collect { assistantName = it } }
@@ -230,7 +252,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         return try { startActivity(packageManager.getLaunchIntentForPackage(pkg) ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse(fallback))); true }
         catch (_: Exception) { false }
     }
-    override fun onDestroy() { stopListening(); recognizer?.destroy(); tts?.stop(); tts?.shutdown(); super.onDestroy() }
+    override fun onDestroy() {
+        stopListening()
+        try { unregisterReceiver(serviceReceiver) } catch (_: Exception) {}
+        recognizer?.destroy()
+        tts?.stop()
+        tts?.shutdown()
+        super.onDestroy()
+    }
 }
 
 @Composable
@@ -313,7 +342,11 @@ private fun JarvisScreen(
                 Text("VOICE PITCH " + "%.2f".format(Locale.UK, pitch) + " • RATE " + "%.2f".format(Locale.UK, rate), color = Muted, fontSize = 10.sp)
                 Slider(value = pitch, onValueChange = onPitch, valueRange = 0.5f..1.5f)
                 Slider(value = rate, onValueChange = onRate, valueRange = 0.5f..1.5f)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = onStart, modifier = Modifier.weight(1f)) { Text("START LISTENING") }; OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) { Text("STOP") } }
+                Button(
+                    onClick = { if (listening) onStop() else onStart() },
+                    modifier = Modifier.fillMaxWidth().height(58.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (listening) Color(0xFF7D2638) else Color(0xFF087C91))
+                ) { Text(if (listening) "⏻  POWER OFF — RELEASE MICROPHONE" else "⏻  POWER ON — START JARVIS", fontWeight = FontWeight.Bold) }
                 Text("COMMAND HISTORY", color = Cyan, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 64.dp)) { items(history) { Text(it, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(vertical = 2.dp)) } }
             }
