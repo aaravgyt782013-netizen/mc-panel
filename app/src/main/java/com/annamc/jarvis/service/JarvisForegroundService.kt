@@ -238,10 +238,50 @@ class JarvisForegroundService : Service() {
     }
 
     private fun startCommandRecognition() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            speak("Command recognition is unavailable, sir.")
+        val loadedModel = model
+        if (loadedModel == null) {
+            startFallbackCommandRecognition()
+            return
+        }
+        try {
+            speechService?.stop()
+            speechService = null
+            val recognizer = Recognizer(loadedModel, 16000.0f)
+            recognizer.setWords(true)
+            speechService = SpeechService(recognizer, 16000.0f).also { it.startListening(commandVoskListener) }
+        } catch (_: Exception) {
+            startFallbackCommandRecognition()
+        }
+    }
+
+    private val commandVoskListener = object : VoskListener {
+        override fun onPartialResult(hypothesis: String?) {
+            sendState("Listening")
+        }
+        override fun onResult(hypothesis: String?) {}
+        override fun onFinalResult(hypothesis: String?) {
+            val text = parseText(hypothesis).trim().lowercase(Locale.ROOT)
+            val confidence = confidenceOf(hypothesis, text)
+            if (text.isBlank() || confidence < 0.35f) {
+                startFallbackCommandRecognition()
+                return
+            }
             listeningForCommand = false
-            startWakeListening()
+            speechService?.stop()
+            speechService = null
+            sendState("Processing")
+            sendCommand(text)
+            handleBackgroundCommand(text)
+        }
+        override fun onError(exception: Exception?) { startFallbackCommandRecognition() }
+        override fun onTimeout() { startFallbackCommandRecognition() }
+    }
+
+    private fun startFallbackCommandRecognition() {
+        if (!listeningForCommand) listeningForCommand = true
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            listeningForCommand = false
+            speak("Command recognition is unavailable, sir.")
             return
         }
         try {
@@ -255,7 +295,6 @@ class JarvisForegroundService : Service() {
                     override fun onEndOfSpeech() { sendState("Processing"); updateNotification("Processing command") }
                     override fun onError(error: Int) {
                         listeningForCommand = false
-                        sendState("Standby")
                         startWakeListening()
                     }
                     override fun onResults(results: android.os.Bundle?) {
@@ -263,6 +302,7 @@ class JarvisForegroundService : Service() {
                         val command = raw.trim().lowercase(Locale.ROOT)
                         listeningForCommand = false
                         if (command.isNotBlank()) {
+                            sendState("Processing")
                             sendCommand(command)
                             handleBackgroundCommand(command)
                         } else startWakeListening()
@@ -281,6 +321,19 @@ class JarvisForegroundService : Service() {
             listeningForCommand = false
             startWakeListening()
         }
+    }
+
+    private fun confidenceOf(json: String?, text: String): Float {
+        return try {
+            val words = JSONObject(json ?: "{}").optJSONArray("result")
+            if (words == null || words.length() == 0) {
+                if (text.isBlank()) 0f else 0.5f
+            } else {
+                var total = 0.0
+                for (i in 0 until words.length()) total += words.optJSONObject(i)?.optDouble("conf", 0.0) ?: 0.0
+                (total / words.length()).toFloat()
+            }
+        } catch (_: Exception) { if (text.isBlank()) 0f else 0.25f }
     }
 
     private fun handleBackgroundCommand(command: String) {
