@@ -65,6 +65,17 @@ class JarvisForegroundService : Service() {
         tts = android.speech.tts.TextToSpeech(this) { status ->
             if (status == android.speech.tts.TextToSpeech.SUCCESS) tts?.language = Locale.UK
         }
+        scope.launch(Dispatchers.Main) {
+            AssistantSettings(applicationContext).assistantName.collect { newName ->
+                if (newName != assistantName) {
+                    assistantName = newName
+                    if (model != null && !listeningForCommand &&
+                        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ENABLED, false)) {
+                        startWakeListening()
+                    }
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -114,10 +125,7 @@ class JarvisForegroundService : Service() {
             return START_STICKY
         }
         pausedByPowerSaver = false
-        scope.launch {
-            assistantName = AssistantSettings(applicationContext).assistantName.first()
-            loadModelAndListen()
-        }
+        scope.launch(Dispatchers.Main) { loadModelAndListen() }
         return START_STICKY
     }
 
