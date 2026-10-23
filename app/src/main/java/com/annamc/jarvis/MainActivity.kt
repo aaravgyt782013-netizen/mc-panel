@@ -145,12 +145,48 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private fun speak(text: String) { applyVoice(); tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-response") }
     private fun tone(tone: Int) { try { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 60).startTone(tone, 120) } catch (_: Exception) {} }
 
+    private val permissionSteps = listOf(
+        "MICROPHONE", "NOTIFICATIONS", "ACCESSIBILITY", "NOTIFICATION_ACCESS", "OVERLAY",
+        "CONTACTS", "CALLS", "SMS", "CALENDAR", "CAMERA", "WRITE_SETTINGS",
+        "USAGE_ACCESS", "EXACT_ALARMS", "DND", "BATTERY", "AUTOSTART"
+    )
+
+    private fun isPermissionReady(key: String): Boolean = try {
+        when (key) {
+            "MICROPHONE" -> ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            "NOTIFICATIONS" -> Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            "ACCESSIBILITY" -> Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+                ?.split(':')?.any { it.equals("$packageName/com.annamc.jarvis.accessibility.JarvisAccessibilityService", true) } == true
+            "NOTIFICATION_ACCESS" -> Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+                ?.split(':')?.any { it.contains(packageName, true) } == true
+            "OVERLAY" -> Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)
+            "CONTACTS" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+            "CALLS" -> ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+            "SMS" -> ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+            "CALENDAR" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+            "CAMERA" -> ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            "WRITE_SETTINGS" -> Build.VERSION.SDK_INT < 23 || Settings.System.canWrite(this)
+            "USAGE_ACCESS" -> {
+                val appOps = getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+                val mode = if (Build.VERSION.SDK_INT >= 29) appOps.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
+                    else @Suppress("DEPRECATION") appOps.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
+                mode == android.app.AppOpsManager.MODE_ALLOWED
+            }
+            "EXACT_ALARMS" -> Build.VERSION.SDK_INT < 31 || (getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager).canScheduleExactAlarms()
+            "DND" -> (getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).isNotificationPolicyAccessGranted
+            "BATTERY" -> Build.VERSION.SDK_INT < 23 || (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(packageName)
+            "AUTOSTART" -> true // OEM autostart controls have no portable Android API; offer the app-info page as guidance.
+            else -> false
+        }
+    } catch (_: Exception) { false }
+
     private fun refreshPermissions() {
-        val mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        val notifications = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        permissionStage = when { !mic && "MICROPHONE" !in skippedPermissions -> "MICROPHONE"; !notifications && "NOTIFICATIONS" !in skippedPermissions -> "NOTIFICATIONS"; else -> "" }
-        if (!mic || !notifications) status = "PERMISSIONS REQUIRED"
+        permissionStage = permissionSteps.firstOrNull { !isPermissionReady(it) && it !in skippedPermissions }.orEmpty()
+        if (permissionStage.isNotBlank()) status = "SETUP REQUIRED"
     }
+
     override fun onResume() { super.onResume(); refreshPermissions() }
 
     private fun requestPermission(which: String) {
