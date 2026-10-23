@@ -80,12 +80,13 @@ jobs:
             artifacts/JARVIS-release-unsigned.zip
           if-no-files-found: error
           retention-days: 14
-      - name: Publish latest-debug prerelease
+      - name: Publish premium-debug prerelease
+        if: github.ref == 'refs/heads/jarvis-premium'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest-debug
-          target_commitish: jarvis-rebuild
-          name: JARVIS latest debug build
+          tag_name: premium-debug
+          target_commitish: jarvis-premium
+          name: JARVIS Premium debug build
           prerelease: true
           make_latest: false
           overwrite_files: true
