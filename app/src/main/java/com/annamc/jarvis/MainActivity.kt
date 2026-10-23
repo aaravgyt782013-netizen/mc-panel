@@ -379,6 +379,8 @@ private fun JarvisScreen(
     var tab by remember { mutableStateOf("Home") }
     val context = LocalContext.current
     val powerSaverOn = (context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isPowerSaveMode
+    val diagPrefs = context.getSharedPreferences("jarvis", Context.MODE_PRIVATE)
+    val diagnosticLog = diagPrefs.getString("diag_log", "No service logs yet. Start JARVIS to collect diagnostics.").orEmpty()
     val serviceStartedAt = context.getSharedPreferences("jarvis", Context.MODE_PRIVATE).getLong("listening_started_at", 0L)
     val uptimeText = if (serviceStartedAt > 0L) { val seconds = ((System.currentTimeMillis() - serviceStartedAt) / 1000L).coerceAtLeast(0L); "%02d:%02d:%02d".format(Locale.UK, seconds / 3600, (seconds % 3600) / 60, seconds % 60) } else "Not currently recorded"
     val transition = rememberInfiniteTransition(label = "reactor")
@@ -514,6 +516,38 @@ private fun JarvisScreen(
                             Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(label, color = Muted, fontSize = 12.sp); Text(value, color = Color.White, fontSize = 12.sp, modifier = Modifier.widthIn(max = 190.dp)) }
                         }
                     }
+                    "Diagnostics" -> Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(18.dp)) {
+                        Text("LIVE DIAGNOSTICS", color = Cyan, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        val diagRows = listOf(
+                            "Vosk model" to diagPrefs.getString("diag_model", "Not confirmed loaded").orEmpty(),
+                            "Model error" to diagPrefs.getString("diag_model_error", "—").orEmpty(),
+                            "Service state" to status,
+                            "Microphone / engine" to diagPrefs.getString("diag_mic", "No microphone callback yet").orEmpty(),
+                            "Audio level (RMS dB)" to if (diagPrefs.contains("diag_audio_level")) diagPrefs.getFloat("diag_audio_level", 0f).toString() else "No level reported",
+                            "Last partial heard" to diagPrefs.getString("diag_last_partial", "—").orEmpty(),
+                            "Last final heard" to diagPrefs.getString("diag_last_final", "—").orEmpty(),
+                            "Wake-name match" to diagPrefs.getString("diag_wake_match", "Not evaluated").orEmpty(),
+                            "Engine error" to diagPrefs.getString("diag_engine_error", diagPrefs.getString("diag_fallback_error", "—")).orEmpty(),
+                            "Accessibility" to if (onPermissionStatus("ACCESSIBILITY")) "Enabled" else "Disabled",
+                            "Notification listener" to if (onPermissionStatus("NOTIFICATION_ACCESS")) "Enabled" else "Disabled",
+                            "Battery Saver" to if (powerSaverOn) "ON" else "Off",
+                            "Battery optimization" to if (onPermissionStatus("BATTERY")) "Exempt" else "Optimized"
+                        )
+                        diagRows.forEach { (label, value) ->
+                            Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                                Text(label, color = Muted, fontSize = 11.sp)
+                                Text(value, color = Color.White, fontSize = 13.sp)
+                            }
+                            Divider(color = Color(0xFF17384D))
+                        }
+                        Text("LAST 50 LOG LINES", color = Cyan, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+                        Text(diagnosticLog, color = Color(0xFFB7D3E5), fontSize = 10.sp)
+                        Button(onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("JARVIS diagnostics", diagnosticLog))
+                        }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { Text("COPY LOG") }
+                        OutlinedButton(onClick = { onPermission("BATTERY") }, modifier = Modifier.fillMaxWidth()) { Text("OPEN BATTERY OPTIMIZATION SETTINGS") }
+                    }
                     "Permissions" -> Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(18.dp)) {
                         Text("PERMISSIONS", color = Cyan, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Text("Grant only the capabilities you want JARVIS to use. Android may require you to confirm access in Settings.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
@@ -565,7 +599,7 @@ private fun JarvisScreen(
                 }
                 }
                 NavigationBar(containerColor = Color(0xFF071321), contentColor = Cyan) {
-                    listOf("Home" to "⌂", "Commands" to "≋", "Permissions" to "✓", "Settings" to "⚙").forEach { (label, symbol) ->
+                    listOf("Home" to "⌂", "Commands" to "≋", "Diagnostics" to "⌁", "Permissions" to "✓", "Settings" to "⚙").forEach { (label, symbol) ->
                         NavigationBarItem(selected = tab == label, onClick = { tab = label }, icon = { Text(symbol, fontSize = 18.sp) }, label = { Text(label, fontSize = 10.sp) }, alwaysShowLabel = true, colors = NavigationBarItemDefaults.colors(selectedIconColor = Cyan, selectedTextColor = Cyan, indicatorColor = Color(0xFF153449), unselectedIconColor = Muted, unselectedTextColor = Muted))
                     }
                 }
