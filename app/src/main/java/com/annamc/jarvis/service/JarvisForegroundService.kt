@@ -59,6 +59,7 @@ class JarvisForegroundService : Service() {
     private var pausedByPowerSaver = false
     private var pausedByOtherRecorder = false
     private var pausedByCall = false
+    private var torchOn = false
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
 
     override fun onCreate() {
@@ -188,7 +189,7 @@ class JarvisForegroundService : Service() {
     }
 
     private fun startWakeListening() {
-        if (pausedByPowerSaver || pausedByOtherRecorder || pausedByCall || !isEnabled()) return
+        if (listeningForCommand || pausedByPowerSaver || pausedByOtherRecorder || pausedByCall || !isEnabled()) return
         try {
             speechService?.stop()
             speechService = null
@@ -210,10 +211,10 @@ class JarvisForegroundService : Service() {
         override fun onResult(hypothesis: String?) {
             val text = parseText(hypothesis)
             if (AssistantNameMatcher.isAddressed(text, assistantName)) {
+                listeningForCommand = true
                 try { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70).startTone(ToneGenerator.TONE_PROP_BEEP, 100) } catch (_: Exception) {}
                 speechService?.stop()
                 speechService = null
-                listeningForCommand = true
                 updateNotification("Listening for command")
                 sendState("Listening")
                 startCommandRecognition()
@@ -299,6 +300,23 @@ class JarvisForegroundService : Service() {
     }
 
     private fun executeCommand(command: String) {
+        if (command.contains("flashlight") || command.contains("torch")) {
+            val success = try {
+                val camera = getSystemService(Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+                val id = camera.cameraIdList.firstOrNull {
+                    camera.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                }
+                if (id == null) false else {
+                    val next = !torchOn
+                    camera.setTorchMode(id, next)
+                    torchOn = next
+                    true
+                }
+            } catch (_: Exception) { false }
+            speak(if (success) "Done, sir. Flashlight changed." else "I'm afraid the flashlight failed, sir.")
+            startWakeListening()
+            return
+        }
         val intent = when {
             command.contains("youtube") -> packageManager.getLaunchIntentForPackage("com.google.android.youtube")
                 ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com"))
