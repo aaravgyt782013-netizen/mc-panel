@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">JARVIS</string>
+    <string name="jarvis_accessibility_description">Allows JARVIS to inspect screen content and perform user-requested accessibility actions when explicitly enabled in Android Settings.</string>
+</resources>

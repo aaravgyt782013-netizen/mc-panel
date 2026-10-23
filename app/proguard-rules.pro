@@ -1,0 +1,11 @@
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes InnerClasses
+-keepattributes EnclosingMethod
+-keep class dagger.hilt.** { *; }
+-keep class javax.inject.** { *; }
+-keep class com.annamc.jarvis.JarvisApplication { *; }
+-keep class com.annamc.jarvis.service.JarvisForegroundService { *; }
+-keep class com.annamc.jarvis.accessibility.JarvisAccessibilityService { *; }
+-keep class com.annamc.jarvis.notifications.JarvisNotificationListener { *; }
+-keep class com.annamc.jarvis.receiver.JarvisBootReceiver { *; }
