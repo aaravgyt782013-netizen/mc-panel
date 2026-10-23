@@ -310,9 +310,14 @@ class JarvisForegroundService : Service() {
                     override fun onBufferReceived(buffer: ByteArray?) {}
                     override fun onEndOfSpeech() { sendState("Processing"); updateNotification("Processing command") }
                     override fun onError(error: Int) {
-                        listeningForCommand = false
                         fallbackActive = false
-                        startWakeListening()
+                        if (pendingCommand != null) {
+                            listeningForCommand = true
+                            speak("Please say yes to proceed or no to cancel, sir.")
+                        } else {
+                            listeningForCommand = false
+                            startWakeListening()
+                        }
                     }
                     override fun onResults(results: android.os.Bundle?) {
                         val raw = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
