@@ -87,7 +87,7 @@ class JarvisForegroundService : Service() {
 
         if (Build.VERSION.SDK_INT >= 29) {
             audioManager.registerAudioRecordingCallback(object : AudioManager.AudioRecordingCallback() {
-                override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>?) {
+                override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>?) {
                     val others = configs.orEmpty().any { it.clientPackageName != packageName }
                     if (others && !pausedByOtherRecorder) {
                         pausedByOtherRecorder = true
