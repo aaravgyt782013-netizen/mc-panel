@@ -489,7 +489,10 @@ class JarvisForegroundService : Service() {
     }
 
     private fun parseText(json: String?): String =
-        try { JSONObject(json ?: "{}").optString("text", "") } catch (_: Exception) { "" }
+        try {
+            val value = JSONObject(json ?: "{}")
+            value.optString("text", value.optString("partial", ""))
+        } catch (_: Exception) { "" }
 
     private fun speak(text: String) {
         sendState("Speaking")
