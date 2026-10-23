@@ -6,7 +6,7 @@ concurrency:
   group: jarvis-android-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,13 +19,25 @@ jobs:
           java-version: "17"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Bundle Vosk small English offline model
+      - name: Bundle and validate Vosk model layout
+        shell: bash
         run: |
-          mkdir -p app/src/main/assets
+          set -euo pipefail
+          mkdir -p app/src/main/assets /tmp/vosk-model-extract
           curl -fL --retry 3 https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/vosk-model.zip
+          unzip -q /tmp/vosk-model.zip -d /tmp/vosk-model-extract
+          UUID_FILE="$(find /tmp/vosk-model-extract -type f -name uuid -print -quit)"
+          test -n "$UUID_FILE" || { echo "ERROR: Vosk archive has no uuid file"; exit 1; }
+          MODEL_DIR="$(dirname "$UUID_FILE")"
+          test -f "$MODEL_DIR/README" -o -d "$MODEL_DIR/am" -o -d "$MODEL_DIR/conf" || { echo "ERROR: Vosk model files missing beside uuid"; exit 1; }
           rm -f app/src/main/assets/model-en-us.zip
-          cp /tmp/vosk-model.zip app/src/main/assets/model-en-us.zip
-          du -sh app/src/main/assets/model-en-us.zip
+          (cd "$MODEL_DIR" && zip -qr "$GITHUB_WORKSPACE/app/src/main/assets/model-en-us.zip" .)
+          unzip -Z1 app/src/main/assets/model-en-us.zip | grep -qx 'uuid' || { echo "ERROR: uuid is not at the archive root"; exit 1; }
+          unzip -Z1 app/src/main/assets/model-en-us.zip | grep -q '^am/' || { echo "ERROR: model am/ directory missing at archive root"; exit 1; }
+          unzip -Z1 app/src/main/assets/model-en-us.zip | grep -q '^conf/' || { echo "ERROR: model conf/ directory missing at archive root"; exit 1; }
+          echo "Validated Vosk model archive root:"
+          unzip -Z1 app/src/main/assets/model-en-us.zip | head -20
+          du -h app/src/main/assets/model-en-us.zip
       - name: Build debug and release APKs
         run: ./gradlew --no-daemon clean testDebugUnitTest assembleDebug assembleRelease
       - name: Verify debug APK signing
@@ -48,6 +60,11 @@ jobs:
             artifacts/JARVIS-debug.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Print debug APK size and SHA-256
+        run: |
+          APK="artifacts/JARVIS-debug.apk"
+          echo "Debug APK size: $(stat -c '%s bytes' "$APK")"
+          sha256sum "$APK"
       - name: Upload unsigned release APK option
         uses: actions/upload-artifact@v4
         with:
@@ -57,3 +74,13 @@ jobs:
             artifacts/JARVIS-release-unsigned.zip
           if-no-files-found: error
           retention-days: 14
+      - name: Publish latest-debug prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-debug
+          target_commitish: jarvis-rebuild
+          name: JARVIS latest debug build
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: artifacts/JARVIS-debug.apk
