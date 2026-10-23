@@ -253,9 +253,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         catch (_: Exception) { false }
     }
     override fun onDestroy() {
-        stopListening()
+        try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
         try { unregisterReceiver(serviceReceiver) } catch (_: Exception) {}
-        recognizer?.destroy()
         tts?.stop()
         tts?.shutdown()
         super.onDestroy()
