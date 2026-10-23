@@ -33,10 +33,9 @@ jobs:
       - name: Upload debug APK and ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: jarvis-debug-apk-and-zip
+          name: jarvis-debug-apk
           path: |
             artifacts/JARVIS-debug.apk
-            artifacts/JARVIS-debug.zip
           if-no-files-found: error
           retention-days: 14
       - name: Upload unsigned release APK option
