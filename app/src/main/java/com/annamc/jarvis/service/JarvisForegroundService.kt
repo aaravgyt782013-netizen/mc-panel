@@ -31,6 +31,8 @@ import com.annamc.jarvis.settings.AssistantSettings
 import com.annamc.jarvis.voice.AssistantNameMatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
@@ -57,6 +59,7 @@ class JarvisForegroundService : Service() {
     private var listeningForCommand = false
     private var fallbackActive = false
     private var pendingCommand: String? = null
+    private var confirmationTimeout: Job? = null
     private var pausedByPowerSaver = false
     private var pausedByOtherRecorder = false
     private var pausedByCall = false
@@ -159,12 +162,17 @@ class JarvisForegroundService : Service() {
             ACTION_CONFIRM -> {
                 val command = pendingCommand
                 pendingCommand = null
+                confirmationTimeout?.cancel()
+                confirmationTimeout = null
                 if (command != null) executeCommand(command)
                 updateNotification("Listening in background")
                 return START_STICKY
             }
             ACTION_CANCEL -> {
                 pendingCommand = null
+                confirmationTimeout?.cancel()
+                confirmationTimeout = null
+                listeningForCommand = false
                 speak("Cancelled, sir.")
                 updateNotification("Listening in background")
                 return START_STICKY
@@ -403,6 +411,16 @@ class JarvisForegroundService : Service() {
             else -> {
                 // Any action that changes the device or opens an app requires explicit notification confirmation.
                 pendingCommand = command
+                confirmationTimeout?.cancel()
+                confirmationTimeout = scope.launch(Dispatchers.Main) {
+                    delay(10_000)
+                    if (pendingCommand == command) {
+                        pendingCommand = null
+                        listeningForCommand = false
+                        speak("Confirmation timed out, sir.")
+                        updateNotification("Action cancelled — confirmation timed out")
+                    }
+                }
                 listeningForCommand = true
                 updateNotification("Confirm action: $command")
                 speak("Shall I proceed, sir?")
@@ -418,6 +436,8 @@ class JarvisForegroundService : Service() {
         }
         val answer = response.lowercase(Locale.ROOT).trim()
         pendingCommand = null
+        confirmationTimeout?.cancel()
+        confirmationTimeout = null
         listeningForCommand = false
         fallbackActive = false
         if (answer == "yes" || answer == "confirm" || answer.contains("go ahead") || answer == "proceed") {
