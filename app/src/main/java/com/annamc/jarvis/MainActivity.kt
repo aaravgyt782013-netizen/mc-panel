@@ -136,7 +136,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 { pitch = it; prefs.edit().putFloat("pitch", it).apply(); applyVoice() },
                 { rate = it; prefs.edit().putFloat("rate", it).apply(); applyVoice() },
                 { name -> lifecycleScope.launch { assistantSettings.setAssistantName(name) } },
-                { resolvePending(true) }, { resolvePending(false) }, { requestPermission(it) }, { countdown = it }, { skippedPermissions.add(it); refreshPermissions() })
+                { resolvePending(true) }, { resolvePending(false) }, { requestPermission(it) }, { countdown = it }, { skippedPermissions.add(it); refreshPermissions() }, { isPermissionReady(it) })
         }
     }
 
@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             "USAGE_ACCESS" -> {
                 val appOps = getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
                 val mode = if (Build.VERSION.SDK_INT >= 29) appOps.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
-                    else @Suppress("DEPRECATION") appOps.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
+                    else appOps.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
                 mode == android.app.AppOpsManager.MODE_ALLOWED
             }
             "EXACT_ALARMS" -> Build.VERSION.SDK_INT < 31 || (getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager).canScheduleExactAlarms()
@@ -321,7 +321,7 @@ private fun JarvisScreen(
     history: List<String>, level: ConfirmLevel, pitch: Float, rate: Float, pending: PendingAction?, countdown: Int,
     permissionStage: String, assistantName: String, onStart: () -> Unit, onStop: () -> Unit, onLevel: (ConfirmLevel) -> Unit,
     onPitch: (Float) -> Unit, onRate: (Float) -> Unit, onAssistantName: (String) -> Unit, onConfirm: () -> Unit, onCancel: () -> Unit,
-    onPermission: (String) -> Unit, onCountdown: (Int) -> Unit, onSkip: (String) -> Unit
+    onPermission: (String) -> Unit, onCountdown: (Int) -> Unit, onSkip: (String) -> Unit, onPermissionStatus: (String) -> Boolean
 ) {
     var tab by remember { mutableStateOf("Home") }
     val transition = rememberInfiniteTransition(label = "reactor")
@@ -344,17 +344,51 @@ private fun JarvisScreen(
                     Column(horizontalAlignment = Alignment.End) { Text(clock, color = Color.White, fontSize = 16.sp); Text("$battery%  •  $network", color = Cyan, fontSize = 11.sp) }
                 }
                 if (permissionStage.isNotBlank() && tab == "Home") {
-                    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF332515)), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFC56D))) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text("SETUP REQUIRED • $permissionStage", color = Color(0xFFFFD28A), fontWeight = FontWeight.Bold)
-                            Text(if (permissionStage == "MICROPHONE") "Microphone access is needed for voice control. Grant it now or skip and enable it later." else "Notifications let Android show the persistent listening control. Grant or skip to continue.", color = Color.White, fontSize = 12.sp)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { onPermission(permissionStage) }) { Text("Grant") }
-                                OutlinedButton(onClick = { onSkip(permissionStage) }) { Text("Skip for now") }
+                    val steps = listOf(
+                        "MICROPHONE" to "Microphone access lets JARVIS listen for your wake name and voice commands.",
+                        "NOTIFICATIONS" to "Notifications allow Android to display the persistent listening notification and its Stop control.",
+                        "ACCESSIBILITY" to "Accessibility is optional but required for Home, Back, gestures, and on-screen label actions. Enable only if you want those controls.",
+                        "NOTIFICATION_ACCESS" to "Notification access lets JARVIS read notifications you explicitly allow it to access. Treat this as sensitive.",
+                        "OVERLAY" to "Display over other apps is only needed for a floating overlay. Android may show a restricted-settings warning; open App info and choose Allow restricted settings if you trust this app.",
+                        "CONTACTS" to "Contacts access is used for contact lookup. You can skip it if you do not need contact commands.",
+                        "CALLS" to "Phone permissions support call-related features. JARVIS currently opens the dialer rather than placing calls automatically.",
+                        "SMS" to "SMS permission supports message-related features. JARVIS currently opens the message composer; it does not silently send messages.",
+                        "CALENDAR" to "Calendar access is for reading and creating events. Event commands are not fully implemented yet.",
+                        "CAMERA" to "Camera access is for camera features. Opening the camera app does not require JARVIS to capture images itself.",
+                        "WRITE_SETTINGS" to "Modify system settings allows supported changes such as brightness. Android opens a dedicated settings page.",
+                        "USAGE_ACCESS" to "Usage access can help identify foreground apps. Grant only if you want this optional capability.",
+                        "EXACT_ALARMS" to "Exact alarms permit precise reminders on supported Android versions.",
+                        "DND" to "Do Not Disturb access allows supported DND controls. JARVIS may open settings instead of changing the mode directly.",
+                        "BATTERY" to "Battery optimization exemption may improve background reliability but increases battery use. Android and your phone maker may still restrict background work.",
+                        "AUTOSTART" to "Some phone makers provide their own Autostart setting. Android has no universal status API, so this step is guidance only."
+                    )
+                    val index = steps.indexOfFirst { it.first == permissionStage }.coerceAtLeast(0)
+                    val granted = steps.filter { onPermissionStatus(it.first) }
+                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 22.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("INITIAL SETUP", color = Cyan, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Step ${index + 1} of ${steps.size} • ${steps[index].first.replace('_', ' ')}", color = Muted, fontSize = 12.sp)
+                        LinearProgressIndicator(progress = { (index + 1).toFloat() / steps.size }, modifier = Modifier.fillMaxWidth(), color = Cyan, trackColor = Color(0xFF183246))
+                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Panel), border = androidx.compose.foundation.BorderStroke(1.dp, Cyan.copy(alpha = .5f))) {
+                            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(steps[index].first.replace('_', ' '), color = Cyan, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text(steps[index].second, color = Color.White, fontSize = 14.sp)
+                                if (permissionStage == "ACCESSIBILITY" || permissionStage == "NOTIFICATION_ACCESS" || permissionStage == "OVERLAY") {
+                                    Text("If Android says this setting is restricted, open this app's App info page and manually enable “Allow restricted settings” before returning here.", color = Color(0xFFFFD28A), fontSize = 12.sp)
+                                }
+                                Button(onClick = { onPermission(permissionStage) }, modifier = Modifier.fillMaxWidth()) { Text("GRANT / OPEN SETTINGS") }
+                                OutlinedButton(onClick = { onSkip(permissionStage) }, modifier = Modifier.fillMaxWidth()) { Text("SKIP THIS STEP") }
                             }
                         }
+                        Text("GRANTED", color = Color(0xFF63E6A5), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        granted.forEach { item ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("✓", color = Color(0xFF63E6A5), fontSize = 16.sp)
+                                Text(item.second.substringBefore('.'), color = Color(0xFFB7F5D4), fontSize = 12.sp)
+                            }
+                        }
+                        Text("You can skip optional steps and enable them later in Permissions. Microphone and notifications are needed for background voice listening.", color = Muted, fontSize = 11.sp)
                     }
-                }
+                } else {
                 when (tab) {
                     "Home" -> {
                         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
@@ -462,6 +496,7 @@ private fun JarvisScreen(
                         Slider(value = rate, onValueChange = onRate, valueRange = 0.5f..1.5f)
                         Text("Background operation is best-effort. Android/OEM power policies may stop microphone listening; test while locked.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 18.dp))
                     }
+                }
                 }
                 NavigationBar(containerColor = Color(0xFF071321), contentColor = Cyan) {
                     listOf("Home" to "⌂", "Commands" to "≋", "Permissions" to "✓", "Settings" to "⚙").forEach { (label, symbol) ->
