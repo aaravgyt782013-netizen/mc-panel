@@ -3,8 +3,8 @@ on:
   push:
   pull_request:
 concurrency:
-  group: jarvis-android-${{ github.ref }}
-  cancel-in-progress: true
+  group: jarvis-android-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
