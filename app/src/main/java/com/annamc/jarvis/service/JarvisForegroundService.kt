@@ -55,6 +55,7 @@ class JarvisForegroundService : Service() {
     private var tts: android.speech.tts.TextToSpeech? = null
     private var assistantName = "Jarvis"
     private var listeningForCommand = false
+    private var fallbackActive = false
     private var pendingCommand: String? = null
     private var pausedByPowerSaver = false
     private var pausedByOtherRecorder = false
@@ -202,6 +203,7 @@ class JarvisForegroundService : Service() {
 
     private fun startWakeListening() {
         if (listeningForCommand || pausedByPowerSaver || pausedByOtherRecorder || pausedByCall || !isEnabled()) return
+        fallbackActive = false
         try {
             speechService?.stop()
             speechService = null
@@ -267,6 +269,7 @@ class JarvisForegroundService : Service() {
                 return
             }
             listeningForCommand = false
+            fallbackActive = false
             speechService?.stop()
             speechService = null
             sendState("Processing")
@@ -278,8 +281,13 @@ class JarvisForegroundService : Service() {
     }
 
     private fun startFallbackCommandRecognition() {
-        if (!listeningForCommand) listeningForCommand = true
+        if (fallbackActive) return
+        fallbackActive = true
+        listeningForCommand = true
+        try { speechService?.stop() } catch (_: Exception) {}
+        speechService = null
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            fallbackActive = false
             listeningForCommand = false
             speak("Command recognition is unavailable, sir.")
             return
@@ -295,12 +303,14 @@ class JarvisForegroundService : Service() {
                     override fun onEndOfSpeech() { sendState("Processing"); updateNotification("Processing command") }
                     override fun onError(error: Int) {
                         listeningForCommand = false
+                        fallbackActive = false
                         startWakeListening()
                     }
                     override fun onResults(results: android.os.Bundle?) {
                         val raw = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                         val command = raw.trim().lowercase(Locale.ROOT)
                         listeningForCommand = false
+                        fallbackActive = false
                         if (command.isNotBlank()) {
                             sendState("Processing")
                             sendCommand(command)
@@ -319,6 +329,7 @@ class JarvisForegroundService : Service() {
             }
         } catch (_: Exception) {
             listeningForCommand = false
+            fallbackActive = false
             startWakeListening()
         }
     }
