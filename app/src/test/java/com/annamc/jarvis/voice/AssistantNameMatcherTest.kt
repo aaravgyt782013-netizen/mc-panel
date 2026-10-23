@@ -14,6 +14,11 @@ class AssistantNameMatcherTest {
         assertEquals("open youtube", AssistantNameMatcher.extractCommand("service open YouTube", "Jarvis"))
         assertEquals("open youtube", AssistantNameMatcher.extractCommand("jervis open YouTube", "Jarvis"))
     }
+    @Test fun acceptsGreetingAndOkayAliases() {
+        assertEquals("open youtube", AssistantNameMatcher.extractCommand("Hi Jarvis, open YouTube", "Jarvis"))
+        assertEquals("open youtube", AssistantNameMatcher.extractCommand("OK Jarvis open YouTube", "Jarvis"))
+        assertEquals("open youtube", AssistantNameMatcher.extractCommand("Okay Jarvis open YouTube", "Jarvis"))
+    }
     @Test fun acceptsHeyNamePrefix() {
         assertEquals("turn on the flashlight", AssistantNameMatcher.extractCommand("Hey Jarvis, turn on the flashlight", "Jarvis"))
     }
