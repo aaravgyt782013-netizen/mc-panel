@@ -241,22 +241,24 @@ class JarvisForegroundService : Service() {
     }
 
     private val wakeListener = object : VoskListener {
-        override fun onPartialResult(hypothesis: String?) {}
-        override fun onResult(hypothesis: String?) {
-            val text = parseText(hypothesis)
-            if (AssistantNameMatcher.isAddressed(text, assistantName)) {
-                listeningForCommand = true
-                try { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70).startTone(ToneGenerator.TONE_PROP_BEEP, 100) } catch (_: Exception) {}
-                speechService?.stop()
-                speechService = null
-                updateNotification("Listening for command")
-                sendState("Listening")
-                startCommandRecognition()
-            }
-        }
-        override fun onFinalResult(hypothesis: String?) { }
-        override fun onError(exception: Exception?) { if (!pausedByPowerSaver) startWakeListening() }
-        override fun onTimeout() { if (!pausedByPowerSaver) startWakeListening() }
+        override fun onPartialResult(hypothesis: String?) { activateWakeIfAddressed(hypothesis) }
+        override fun onResult(hypothesis: String?) { activateWakeIfAddressed(hypothesis) }
+        override fun onFinalResult(hypothesis: String?) { activateWakeIfAddressed(hypothesis) }
+        override fun onError(exception: Exception?) { if (!pausedByPowerSaver && !listeningForCommand) startWakeListening() }
+        override fun onTimeout() { if (!pausedByPowerSaver && !listeningForCommand) startWakeListening() }
+    }
+
+    private fun activateWakeIfAddressed(hypothesis: String?) {
+        if (listeningForCommand || !isEnabled()) return
+        val text = parseText(hypothesis)
+        if (!AssistantNameMatcher.isAddressed(text, assistantName)) return
+        listeningForCommand = true
+        try { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70).startTone(ToneGenerator.TONE_PROP_BEEP, 100) } catch (_: Exception) {}
+        speechService?.stop()
+        speechService = null
+        updateNotification("Listening for command")
+        sendState("Listening")
+        startCommandRecognition()
     }
 
     private fun startCommandRecognition() {
