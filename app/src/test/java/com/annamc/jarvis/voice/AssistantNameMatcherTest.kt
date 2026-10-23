@@ -8,6 +8,12 @@ class AssistantNameMatcherTest {
     @Test fun acceptsCaseAndPunctuation() {
         assertEquals("open youtube", AssistantNameMatcher.extractCommand("JARVIS, open YouTube!", "Jarvis"))
     }
+    @Test fun acceptsCommonJarvisMishearings() {
+        assertEquals("open youtube", AssistantNameMatcher.extractCommand("Javis, open YouTube", "Jarvis"))
+        assertEquals("open youtube", AssistantNameMatcher.extractCommand("Hey Jarvis, open YouTube", "Jarvis"))
+        assertEquals("open youtube", AssistantNameMatcher.extractCommand("service open YouTube", "Jarvis"))
+        assertEquals("open youtube", AssistantNameMatcher.extractCommand("jervis open YouTube", "Jarvis"))
+    }
     @Test fun acceptsHeyNamePrefix() {
         assertEquals("turn on the flashlight", AssistantNameMatcher.extractCommand("Hey Jarvis, turn on the flashlight", "Jarvis"))
     }
