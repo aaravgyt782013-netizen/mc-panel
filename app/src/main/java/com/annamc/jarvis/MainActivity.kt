@@ -125,12 +125,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val notifications = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         permissionStage = when { !mic -> "MICROPHONE"; !notifications -> "NOTIFICATIONS"; else -> "" }
-        if (mic && notifications) {
-            try {
-                val i = Intent(this, com.annamc.jarvis.service.JarvisForegroundService::class.java)
-                if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
-            } catch (_: Exception) { status = "FOREGROUND SERVICE FAILED" }
-        } else status = "PERMISSIONS REQUIRED"
+        if (!mic || !notifications) status = "PERMISSIONS REQUIRED"
     }
     override fun onResume() { super.onResume(); refreshPermissions() }
 
@@ -148,49 +143,36 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private fun requestStart() {
         refreshPermissions()
         if (permissionStage == "MICROPHONE") { micPermission.launch(Manifest.permission.RECORD_AUDIO); return }
-        if (permissionStage == "NOTIFICATIONS") { if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS); return }
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) { respond("Speech recognition is unavailable on this device, sir."); return }
+        if (permissionStage == "NOTIFICATIONS") {
+            if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
         try {
-            recognizer?.destroy()
-            recognizer = SpeechRecognizer.createSpeechRecognizer(this)
-            recognizer?.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) { status = "LISTENING"; isListening = true; tone(ToneGenerator.TONE_PROP_BEEP) }
-                override fun onBeginningOfSpeech() { status = "VOICE DETECTED" }
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() { isListening = false; status = "PROCESSING" }
-                override fun onError(error: Int) { isListening = false; status = "READY" }
-                override fun onResults(results: Bundle?) {
-                    isListening = false
-                    val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
-                    if (pending != null) {
-                        if (words in listOf("yes", "confirm", "go ahead", "yes please")) resolvePending(true)
-                        else if (words in listOf("no", "cancel", "no thanks")) resolvePending(false)
-                        else respond("Please say yes or no, sir.")
-                    } else {
-                        val command = AssistantNameMatcher.extractCommand(words, assistantName)
-                        // Unaddressed audio is discarded: do not display it, log it, or execute it.
-                        if (command == null || command.isBlank()) {
-                            status = "SYSTEM STANDBY"
-                            heard = "Awaiting your command"
-                        } else {
-                            heard = command
-                            handleCommand(command)
-                        }
-                    }
-                }
-                override fun onPartialResults(partialResults: Bundle?) {}
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-            val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB")
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "JARVIS is listening")
-            }
-            recognizer?.startListening(i); isListening = true; status = "INITIALIZING VOICE"
-        } catch (_: Exception) { isListening = false; respond("I couldn't start listening, sir.") }
+            val intent = Intent(this, com.annamc.jarvis.service.JarvisForegroundService::class.java)
+                .setAction(com.annamc.jarvis.service.JarvisForegroundService.ACTION_START)
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
+            isListening = true
+            status = "STANDBY"
+            heard = "Offline wake listening enabled"
+        } catch (_: Exception) {
+            isListening = false
+            respond("I couldn't start the offline voice service, sir.")
+        }
     }
-    private fun stopListening() { try { recognizer?.cancel() } catch (_: Exception) {}; isListening = false; status = "SYSTEM STANDBY" }
+
+    private fun stopListening() {
+        try {
+            recognizer?.cancel()
+            recognizer?.destroy()
+            recognizer = null
+            val intent = Intent(this, com.annamc.jarvis.service.JarvisForegroundService::class.java)
+                .setAction(com.annamc.jarvis.service.JarvisForegroundService.ACTION_STOP)
+            startService(intent)
+        } catch (_: Exception) {}
+        isListening = false
+        status = "SYSTEM STANDBY"
+        heard = "Microphone released"
+    }
 
     private fun handleCommand(command: String) {
         if (pending != null) { respond("Please confirm or cancel the pending action, sir."); return }
