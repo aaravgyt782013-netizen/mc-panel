@@ -90,8 +90,10 @@ class JarvisForegroundService : Service() {
             AssistantSettings(applicationContext).assistantName.collect { newName ->
                 if (newName != assistantName) {
                     assistantName = newName
-                    if (model != null && !listeningForCommand &&
-                        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ENABLED, false)) {
+                    if (model != null && isEnabled() && !pausedByPowerSaver && !pausedByOtherRecorder && !pausedByCall) {
+                        listeningForCommand = false
+                        fallbackActive = false
+                        stopEngine()
                         startWakeListening()
                     }
                 }
