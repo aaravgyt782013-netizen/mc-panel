@@ -16,12 +16,35 @@ jobs:
           java-version: "17"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
-      - name: Upload debug APK
+      - name: Build debug and release APKs
+        run: ./gradlew --no-daemon clean assembleDebug assembleRelease
+      - name: Verify debug APK signing
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK"
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)/apksigner" verify --print-certs "$APK"
+      - name: Prepare downloadable bundles
+        run: |
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/JARVIS-debug.apk
+          cp app/build/outputs/apk/release/app-release-unsigned.apk artifacts/JARVIS-release-unsigned.apk
+          (cd artifacts && zip -q JARVIS-debug.zip JARVIS-debug.apk && zip -q JARVIS-release-unsigned.zip JARVIS-release-unsigned.apk)
+      - name: Upload debug APK and ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: jarvis-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: jarvis-debug-apk-and-zip
+          path: |
+            artifacts/JARVIS-debug.apk
+            artifacts/JARVIS-debug.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload unsigned release APK option
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-release-unsigned-apk-and-zip
+          path: |
+            artifacts/JARVIS-release-unsigned.apk
+            artifacts/JARVIS-release-unsigned.zip
           if-no-files-found: error
           retention-days: 14
