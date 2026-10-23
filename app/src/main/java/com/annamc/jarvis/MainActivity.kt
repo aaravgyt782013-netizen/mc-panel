@@ -154,17 +154,32 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onResume() { super.onResume(); refreshPermissions() }
 
     private fun requestPermission(which: String) {
+        fun appDetails() = startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + packageName)))
+        fun request(vararg permissions: String) {
+            if (permissions.isNotEmpty()) requestPermissions(permissions, 721)
+        }
         when (which) {
             "MICROPHONE" -> micPermission.launch(Manifest.permission.RECORD_AUDIO)
             "NOTIFICATIONS" -> if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else refreshPermissions()
-            "PHONE_STATE" -> phoneStatePermission.launch(Manifest.permission.READ_PHONE_STATE)
             "ACCESSIBILITY" -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             "NOTIFICATION_ACCESS" -> startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
-            "WRITE_SETTINGS" -> startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS))
-            "BATTERY" -> startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-            else -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + packageName)))
+            "OVERLAY" -> if (Build.VERSION.SDK_INT >= 23) startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:" + packageName))) else appDetails()
+            "CONTACTS" -> request(Manifest.permission.READ_CONTACTS)
+            "PHONE_STATE" -> phoneStatePermission.launch(Manifest.permission.READ_PHONE_STATE)
+            "CALLS" -> request(Manifest.permission.CALL_PHONE, Manifest.permission.READ_PHONE_STATE)
+            "SMS" -> request(Manifest.permission.SEND_SMS, Manifest.permission.READ_SMS)
+            "CALENDAR" -> request(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+            "CAMERA" -> request(Manifest.permission.CAMERA)
+            "WRITE_SETTINGS" -> if (Build.VERSION.SDK_INT >= 23) startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, android.net.Uri.parse("package:" + packageName))) else appDetails()
+            "USAGE_ACCESS" -> startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            "EXACT_ALARMS" -> if (Build.VERSION.SDK_INT >= 31) startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:" + packageName))) else refreshPermissions()
+            "DND" -> startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+            "BATTERY" -> if (Build.VERSION.SDK_INT >= 23) startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:" + packageName))) else refreshPermissions()
+            "AUTOSTART" -> appDetails()
+            else -> appDetails()
         }
     }
+
     private fun requestStart() {
         refreshPermissions()
         if (permissionStage == "MICROPHONE") { micPermission.launch(Manifest.permission.RECORD_AUDIO); return }
