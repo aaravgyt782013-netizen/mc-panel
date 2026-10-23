@@ -631,7 +631,7 @@ class JarvisForegroundService : Service() {
             if (listeningWakeLock?.isHeld != true) {
                 listeningWakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JARVIS:VoiceListening").apply {
                     setReferenceCounted(false)
-                    acquire(10 * 60 * 1000L)
+                    acquire()
                 }
                 if (listeningStartedAt == 0L) {
                     listeningStartedAt = System.currentTimeMillis()
