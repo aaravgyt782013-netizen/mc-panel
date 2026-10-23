@@ -273,8 +273,8 @@ class JarvisForegroundService : Service() {
             sendCommand(text)
             handleBackgroundCommand(text)
         }
-        override fun onError(exception: Exception?) { startFallbackCommandRecognition() }
-        override fun onTimeout() { startFallbackCommandRecognition() }
+        override fun onError(exception: Exception?) { if (listeningForCommand) startFallbackCommandRecognition() }
+        override fun onTimeout() { if (listeningForCommand) startFallbackCommandRecognition() }
     }
 
     private fun startFallbackCommandRecognition() {
