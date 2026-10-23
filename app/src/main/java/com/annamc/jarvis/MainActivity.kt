@@ -103,7 +103,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 { level = it; prefs.edit().putString("level", it.name).apply() },
                 { pitch = it; prefs.edit().putFloat("pitch", it).apply(); applyVoice() },
                 { rate = it; prefs.edit().putFloat("rate", it).apply(); applyVoice() },
-                { resolvePending(true) }, { resolvePending(false) }, { requestPermission(it) })
+                { resolvePending(true) }, { resolvePending(false) }, { requestPermission(it) }, { countdown = it })
         }
     }
 
@@ -233,7 +233,7 @@ private fun JarvisScreen(
     history: List<String>, level: ConfirmLevel, pitch: Float, rate: Float, pending: PendingAction?, countdown: Int,
     permissionStage: String, onStart: () -> Unit, onStop: () -> Unit, onLevel: (ConfirmLevel) -> Unit,
     onPitch: (Float) -> Unit, onRate: (Float) -> Unit, onConfirm: () -> Unit, onCancel: () -> Unit,
-    onPermission: (String) -> Unit
+    onPermission: (String) -> Unit, onCountdown: (Int) -> Unit
 ) {
     val transition = rememberInfiniteTransition(label = "reactor")
     val pulse by transition.animateFloat(0.92f, 1.06f, infiniteRepeatable(tween(1400), RepeatMode.Reverse), label = "pulse")
@@ -242,7 +242,7 @@ private fun JarvisScreen(
         if (pending != null) {
             for (seconds in 10 downTo 1) {
                 delay(1000)
-                if (pending != null) countdown = seconds - 1
+                if (pending != null) onCountdown(seconds - 1)
             }
             if (pending != null) onCancel()
         }
