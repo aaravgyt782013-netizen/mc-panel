@@ -28,7 +28,7 @@ jobs:
           mv /tmp/vosk-model/vosk-model-small-en-us-0.15 app/src/main/assets/model-en-us
           du -sh app/src/main/assets/model-en-us
       - name: Build debug and release APKs
-        run: ./gradlew --no-daemon clean assembleDebug assembleRelease
+        run: ./gradlew --no-daemon clean testDebugUnitTest assembleDebug assembleRelease
       - name: Verify debug APK signing
         run: |
           APK="app/build/outputs/apk/debug/app-debug.apk"
