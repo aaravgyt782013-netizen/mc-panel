@@ -293,7 +293,7 @@ class JarvisForegroundService : Service() {
                 })
                 val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB")
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
                 }
@@ -309,21 +309,13 @@ class JarvisForegroundService : Service() {
     private fun startWakeListening() {
         if (listeningForCommand || pausedByPowerSaver || pausedByOtherRecorder || pausedByCall || !isEnabled()) return
         acquireListeningWakeLock()
-        fallbackActive = false
-        try {
-            speechService?.stop()
-            speechService = null
-            val loadedModel = model ?: run { startFallbackWakeRecognition(); return }
-            // Unconstrained offline recognition permits user-defined names and additional commands.
-            val recognizer = Recognizer(loadedModel, 16000.0f)
-            speechService = SpeechService(recognizer, 16000.0f).also { it.startListening(wakeListener) }
-            updateNotification("Standby — say $assistantName")
-            sendState("Standby")
-        } catch (error: Exception) {
-            diagnostic("engine_error", error.message ?: error.javaClass.simpleName)
-            updateNotification("Vosk error; switching to Android speech fallback")
-            startFallbackWakeRecognition()
-        }
+        try { speechService?.stop() } catch (_: Exception) {}
+        speechService = null
+        // Android SpeechRecognizer is the primary live-demo path. Unlike Vosk's current
+        // broken asset layout, it can use the device's installed recognition provider.
+        updateNotification("Standby — say $assistantName")
+        diagnostic("engine", "Android SpeechRecognizer primary; availability depends on device provider")
+        startFallbackWakeRecognition()
     }
 
     private val wakeListener = object : VoskListener {
@@ -349,20 +341,9 @@ class JarvisForegroundService : Service() {
 
     private fun startCommandRecognition() {
         acquireListeningWakeLock()
-        val loadedModel = model
-        if (loadedModel == null) {
-            startFallbackCommandRecognition()
-            return
-        }
-        try {
-            speechService?.stop()
-            speechService = null
-            val recognizer = Recognizer(loadedModel, 16000.0f)
-            recognizer.setWords(true)
-            speechService = SpeechService(recognizer, 16000.0f).also { it.startListening(commandVoskListener) }
-        } catch (_: Exception) {
-            startFallbackCommandRecognition()
-        }
+        try { speechService?.stop() } catch (_: Exception) {}
+        speechService = null
+        startFallbackCommandRecognition()
     }
 
     private val commandVoskListener = object : VoskListener {
