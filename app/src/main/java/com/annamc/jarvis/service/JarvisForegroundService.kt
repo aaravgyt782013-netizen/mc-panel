@@ -61,6 +61,7 @@ class JarvisForegroundService : Service() {
     private var pausedByOtherRecorder = false
     private var pausedByCall = false
     private var torchOn = false
+    private var stopAfterSpeech = false
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
 
     override fun onCreate() {
@@ -79,7 +80,13 @@ class JarvisForegroundService : Service() {
                     override fun onError(utteranceId: String?) {}
                     override fun onDone(utteranceId: String?) {
                         Handler(Looper.getMainLooper()).post {
-                            if (isEnabled() && !pausedByPowerSaver && !pausedByOtherRecorder && !pausedByCall) {
+                            if (stopAfterSpeech) {
+                                stopAfterSpeech = false
+                                stopEngine()
+                                sendState("OFF")
+                                stopForegroundCompat()
+                                stopSelf()
+                            } else if (isEnabled() && !pausedByPowerSaver && !pausedByOtherRecorder && !pausedByCall) {
                                 if (pendingCommand != null && listeningForCommand) startCommandRecognition()
                                 else if (pendingCommand == null && !listeningForCommand) startWakeListening()
                             }
@@ -212,8 +219,17 @@ class JarvisForegroundService : Service() {
             speechService?.stop()
             speechService = null
             val loadedModel = model ?: return
-            val grammar = JSONArray().put(assistantName.lowercase(Locale.ROOT))
+            val grammar = JSONArray()
+                .put(assistantName.lowercase(Locale.ROOT))
                 .put("hey " + assistantName.lowercase(Locale.ROOT))
+                .put("open youtube")
+                .put("open browser")
+                .put("turn on the flashlight")
+                .put("turn off the flashlight")
+                .put("what time is it")
+                .put("battery level")
+                .put("stop listening")
+                .put("go to sleep")
                 .put("[unk]").toString()
             val recognizer = Recognizer(loadedModel, 16000.0f, grammar)
             speechService = SpeechService(recognizer, 16000.0f).also { it.startListening(wakeListener) }
@@ -370,10 +386,10 @@ class JarvisForegroundService : Service() {
         when {
             command.contains("stop listening") || command.contains("go to sleep") -> {
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, false).apply()
-                speak("Going to sleep, sir.")
+                listeningForCommand = false
                 stopEngine()
-                stopForegroundCompat()
-                stopSelf()
+                stopAfterSpeech = true
+                speak("Going to sleep, sir.")
             }
             command.contains("time") -> {
                 speak("The time is " + SimpleDateFormat("h:mm a", Locale.UK).format(Date()) + ", sir.")
