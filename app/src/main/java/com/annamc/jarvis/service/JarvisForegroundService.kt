@@ -79,8 +79,10 @@ class JarvisForegroundService : Service() {
                     override fun onError(utteranceId: String?) {}
                     override fun onDone(utteranceId: String?) {
                         Handler(Looper.getMainLooper()).post {
-                            if (isEnabled() && pendingCommand == null && !listeningForCommand &&
-                                !pausedByPowerSaver && !pausedByOtherRecorder && !pausedByCall) startWakeListening()
+                            if (isEnabled() && !pausedByPowerSaver && !pausedByOtherRecorder && !pausedByCall) {
+                                if (pendingCommand != null && listeningForCommand) startCommandRecognition()
+                                else if (pendingCommand == null && !listeningForCommand) startWakeListening()
+                            }
                         }
                     }
                 })
@@ -275,8 +277,12 @@ class JarvisForegroundService : Service() {
             speechService?.stop()
             speechService = null
             sendState("Processing")
-            sendCommand(text)
-            handleBackgroundCommand(text)
+            if (pendingCommand != null) {
+                handleConfirmationResponse(text)
+            } else {
+                sendCommand(text)
+                handleBackgroundCommand(text)
+            }
         }
         override fun onError(exception: Exception?) { if (listeningForCommand) startFallbackCommandRecognition() }
         override fun onTimeout() { if (listeningForCommand) startFallbackCommandRecognition() }
@@ -315,8 +321,14 @@ class JarvisForegroundService : Service() {
                         fallbackActive = false
                         if (command.isNotBlank()) {
                             sendState("Processing")
-                            sendCommand(command)
-                            handleBackgroundCommand(command)
+                            if (pendingCommand != null) handleConfirmationResponse(command)
+                            else {
+                                sendCommand(command)
+                                handleBackgroundCommand(command)
+                            }
+                        } else if (pendingCommand != null) {
+                            listeningForCommand = true
+                            speak("Please say yes to proceed or no to cancel, sir.")
                         } else startWakeListening()
                     }
                     override fun onPartialResults(partialResults: android.os.Bundle?) {}
@@ -368,10 +380,33 @@ class JarvisForegroundService : Service() {
             else -> {
                 // Any action that changes the device or opens an app requires explicit notification confirmation.
                 pendingCommand = command
+                listeningForCommand = true
                 updateNotification("Confirm action: $command")
                 speak("Shall I proceed, sir?")
-                startWakeListening()
             }
+        }
+    }
+
+    private fun handleConfirmationResponse(response: String) {
+        val requested = pendingCommand ?: run {
+            listeningForCommand = false
+            startWakeListening()
+            return
+        }
+        val answer = response.lowercase(Locale.ROOT).trim()
+        pendingCommand = null
+        listeningForCommand = false
+        fallbackActive = false
+        if (answer == "yes" || answer == "confirm" || answer.contains("go ahead") || answer == "proceed") {
+            updateNotification("Executing confirmed action")
+            executeCommand(requested)
+        } else if (answer == "no" || answer == "cancel" || answer.contains("stop")) {
+            updateNotification("Action cancelled")
+            speak("Cancelled, sir.")
+        } else {
+            pendingCommand = requested
+            listeningForCommand = true
+            speak("Please say yes to proceed or no to cancel, sir.")
         }
     }
 
