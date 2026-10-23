@@ -35,6 +35,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -325,6 +326,10 @@ private fun JarvisScreen(
     onPermission: (String) -> Unit, onCountdown: (Int) -> Unit, onSkip: (String) -> Unit, onPermissionStatus: (String) -> Boolean
 ) {
     var tab by remember { mutableStateOf("Home") }
+    val context = LocalContext.current
+    val powerSaverOn = (context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isPowerSaveMode
+    val serviceStartedAt = context.getSharedPreferences("jarvis", Context.MODE_PRIVATE).getLong("listening_started_at", 0L)
+    val uptimeText = if (serviceStartedAt > 0L) { val seconds = ((System.currentTimeMillis() - serviceStartedAt) / 1000L).coerceAtLeast(0L); "%02d:%02d:%02d".format(Locale.UK, seconds / 3600, (seconds % 3600) / 60, seconds % 60) } else "Not currently recorded"
     val transition = rememberInfiniteTransition(label = "reactor")
     val pulse by transition.animateFloat(0.94f, 1.06f, infiniteRepeatable(tween(1350), RepeatMode.Reverse), label = "pulse")
     val wave by transition.animateFloat(0.25f, 1f, infiniteRepeatable(tween(520), RepeatMode.Reverse), label = "wave")
@@ -422,6 +427,15 @@ private fun JarvisScreen(
                                     Text(heard.ifBlank { "Waiting for an addressed command…" }, Modifier.padding(top = 7.dp), color = Color.White, fontSize = 15.sp)
                                 }
                             }
+                            if (listening && (powerSaverOn || !onPermissionStatus("BATTERY"))) {
+                                Card(Modifier.fillMaxWidth().padding(top = 8.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF332515)), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFC56D))) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text("BACKGROUND ACTIVITY MAY BE RESTRICTED", color = Color(0xFFFFD28A), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text(if (powerSaverOn) "Battery Saver is enabled and may interrupt voice listening." else "Battery optimization is still enabled. Some phone makers may also stop background listening.", color = Color.White, fontSize = 12.sp)
+                                        TextButton(onClick = { onPermission("BATTERY") }) { Text("FIX BATTERY SETTINGS", color = Cyan) }
+                                    }
+                                }
+                            }
                             if (pending != null) Card(Modifier.fillMaxWidth().padding(top = 10.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF12283B)), border = androidx.compose.foundation.BorderStroke(1.dp, Cyan)) {
                                 Column(Modifier.padding(12.dp)) {
                                     Text("CONFIRM ACTION", color = Cyan, fontWeight = FontWeight.Bold)
@@ -445,7 +459,7 @@ private fun JarvisScreen(
                         history.forEach { item -> Card(Modifier.fillMaxWidth().padding(bottom = 8.dp), colors = CardDefaults.cardColors(containerColor = Panel)) { Text(item, Modifier.padding(12.dp), color = Color.White, fontSize = 13.sp) } }
                         Divider(Modifier.padding(vertical = 12.dp), color = Color(0xFF17384D))
                         Text("DIAGNOSTICS", color = Cyan, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        listOf("Service state" to status, "Wake engine" to if (listening) "Enabled • runtime not device-tested" else "Stopped", "Last heard" to heard, "Battery" to "$battery%", "Network" to network, "Permission gate" to if (permissionStage.isBlank()) "Microphone and notifications granted or skipped" else "$permissionStage pending").forEach { (label, value) ->
+                        listOf("Service state" to status, "Wake engine" to if (listening) "Enabled • runtime not device-tested" else "Stopped", "Listening uptime" to uptimeText, "Battery" to "$battery%", "Battery Saver" to if (powerSaverOn) "ON — listening may pause" else "Off", "Battery exemption" to if (onPermissionStatus("BATTERY")) "Granted" else "Not granted", "Last heard" to heard, "Network" to network, "Permission gate" to if (permissionStage.isBlank()) "Setup complete or optional steps skipped" else "$permissionStage pending", "OEM background policy" to "Not detectable by a universal Android API").forEach { (label, value) ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(label, color = Muted, fontSize = 12.sp); Text(value, color = Color.White, fontSize = 12.sp, modifier = Modifier.widthIn(max = 190.dp)) }
                         }
                     }
