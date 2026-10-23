@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { refreshPermissions() }
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { refreshPermissions() }
+    private val phoneStatePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { refreshPermissions() }
 
     private val serviceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -155,6 +156,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         when (which) {
             "MICROPHONE" -> micPermission.launch(Manifest.permission.RECORD_AUDIO)
             "NOTIFICATIONS" -> if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else refreshPermissions()
+            "PHONE_STATE" -> phoneStatePermission.launch(Manifest.permission.READ_PHONE_STATE)
             "ACCESSIBILITY" -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             "NOTIFICATION_ACCESS" -> startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
             "WRITE_SETTINGS" -> startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS))
@@ -298,6 +300,7 @@ private fun JarvisScreen(
                             TextButton(onClick = { onPermission("NOTIFICATION_ACCESS") }) { Text("Notification access (optional)", color = Cyan) }
                             TextButton(onClick = { onPermission("WRITE_SETTINGS") }) { Text("Modify system settings (optional)", color = Cyan) }
                             TextButton(onClick = { onPermission("BATTERY") }) { Text("Battery optimization settings (optional)", color = Cyan) }
+                            TextButton(onClick = { onPermission("PHONE_STATE") }) { Text("Allow call detection (optional)", color = Cyan) }
                         }
                     }
                 }
