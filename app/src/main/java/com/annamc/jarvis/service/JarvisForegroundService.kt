@@ -29,6 +29,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.annamc.jarvis.MainActivity
+import com.annamc.jarvis.accessibility.JarvisAccessibilityService
 import com.annamc.jarvis.R
 import com.annamc.jarvis.settings.AssistantSettings
 import com.annamc.jarvis.voice.AssistantNameMatcher
@@ -237,19 +238,8 @@ class JarvisForegroundService : Service() {
             speechService?.stop()
             speechService = null
             val loadedModel = model ?: return
-            val grammar = JSONArray()
-                .put(assistantName.lowercase(Locale.ROOT))
-                .put("hey " + assistantName.lowercase(Locale.ROOT))
-                .put("open youtube")
-                .put("open browser")
-                .put("turn on the flashlight")
-                .put("turn off the flashlight")
-                .put("what time is it")
-                .put("battery level")
-                .put("stop listening")
-                .put("go to sleep")
-                .put("[unk]").toString()
-            val recognizer = Recognizer(loadedModel, 16000.0f, grammar)
+            // Unconstrained offline recognition permits user-defined names and additional commands.
+            val recognizer = Recognizer(loadedModel, 16000.0f)
             speechService = SpeechService(recognizer, 16000.0f).also { it.startListening(wakeListener) }
             updateNotification("Standby — say $assistantName")
             sendState("Standby")
@@ -465,41 +455,109 @@ class JarvisForegroundService : Service() {
     }
 
     private fun executeCommand(command: String) {
-        if (command.contains("flashlight") || command.contains("torch")) {
+        val text = command.lowercase(Locale.ROOT).trim()
+        if (text.contains("flashlight") || text.contains("torch")) {
             val success = try {
                 val camera = getSystemService(Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
-                val id = camera.cameraIdList.firstOrNull {
-                    camera.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-                }
+                val id = camera.cameraIdList.firstOrNull { camera.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
                 if (id == null) false else {
-                    val next = !torchOn
-                    camera.setTorchMode(id, next)
-                    torchOn = next
-                    true
+                    val turnOn = !text.contains("off") && (text.contains("on") || !torchOn)
+                    camera.setTorchMode(id, turnOn); torchOn = turnOn; true
                 }
             } catch (_: Exception) { false }
-            speak(if (success) "Done, sir. Flashlight changed." else "I'm afraid the flashlight failed, sir.")
+            speak(if (success) "Flashlight state changed, sir." else "Flashlight failed. Check camera permission and device support, sir.")
+            return
+        }
+        val global = when {
+            text == "home" || text.contains("go home") || text.contains("press home") -> "home"
+            text == "back" || text.contains("press back") || text.contains("go back") -> "back"
+            text.contains("recents") || text.contains("recent apps") -> "recents"
+            text.contains("open notifications") || text.contains("show notifications") -> "notifications"
+            text.contains("quick settings") -> "quick settings"
+            else -> null
+        }
+        if (global != null) {
+            val ok = JarvisAccessibilityService.global(global)
+            speak(if (ok) "$global action sent." else "Failed: enable JARVIS Accessibility in Android settings first, sir.")
+            return
+        }
+        if (text.startsWith("click ")) {
+            val label = command.substringAfter("click ").trim()
+            val ok = label.isNotBlank() && JarvisAccessibilityService.click(label)
+            speak(if (ok) "Tapped $label." else "Failed to tap that label. Check Accessibility access and that the label is visible, sir.")
+            return
+        }
+        if (text.startsWith("type ")) {
+            val value = command.substringAfter("type ").trim()
+            val ok = value.isNotBlank() && JarvisAccessibilityService.type(value)
+            speak(if (ok) "Text entered." else "Failed to enter text. Focus an editable field and enable Accessibility, sir.")
+            return
+        }
+        if (text.startsWith("swipe ")) {
+            val ok = JarvisAccessibilityService.swipe(text.substringAfter("swipe ").substringBefore(" "))
+            speak(if (ok) "Swipe sent." else "Swipe failed. Enable Accessibility first, sir.")
+            return
+        }
+        if (text.startsWith("scroll ")) {
+            val ok = JarvisAccessibilityService.scroll(text.substringAfter("scroll ").trim().substringBefore(" "))
+            speak(if (ok) "Scroll sent." else "Scroll failed. Enable Accessibility first, sir.")
+            return
+        }
+        if (text.contains("call ")) {
+            val number = command.substringAfter("call ").trim()
+            val ok = try {
+                if (number.isBlank()) false else { startActivity(Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:" + android.net.Uri.encode(number))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true }
+            } catch (_: Exception) { false }
+            speak(if (ok) "Dialer opened. Review the number and tap call to place it." else "Failed to open the dialer, sir.")
+            return
+        }
+        if (text.startsWith("text ") || text.startsWith("sms ") || text.startsWith("send message")) {
+            val body = when {
+                text.startsWith("text ") -> command.substringAfter("text ")
+                text.startsWith("sms ") -> command.substringAfter("sms ")
+                else -> command.substringAfter("send message")
+            }.trim()
+            val ok = try {
+                startActivity(Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:")).putExtra("sms_body", body).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
+            } catch (_: Exception) { false }
+            speak(if (ok) "Message composer opened. Review recipients and message before sending." else "Failed to open the SMS composer, sir.")
+            return
+        }
+        if (text.startsWith("navigate to ")) {
+            val destination = command.substringAfter("navigate to ").trim()
+            val ok = try {
+                startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("google.navigation:q=" + android.net.Uri.encode(destination))).setPackage("com.google.android.apps.maps").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
+            } catch (_: Exception) { false }
+            speak(if (ok) "Maps navigation opened. Confirm the destination in Maps, sir." else "Failed to open Maps. Check that Maps is installed, sir.")
+            return
+        }
+        if (text.startsWith("search web for ")) {
+            val query = command.substringAfter("search web for ").trim()
+            val ok = try {
+                startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(query))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
+            } catch (_: Exception) { false }
+            speak(if (ok) "Web search opened." else "Failed to open web search, sir.")
             return
         }
         val intent = when {
-            command.contains("youtube") -> packageManager.getLaunchIntentForPackage("com.google.android.youtube")
-                ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com"))
-            command.contains("browser") || command.contains("chrome") -> packageManager.getLaunchIntentForPackage("com.android.chrome")
-                ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com"))
-            command.contains("wifi") || command.contains("wi-fi") -> Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
-            command.contains("bluetooth") -> Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
-            command.contains("brightness") || command.contains("rotation") -> Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS)
-            command.contains("settings") -> Intent(android.provider.Settings.ACTION_SETTINGS)
+            text.contains("youtube") -> packageManager.getLaunchIntentForPackage("com.google.android.youtube") ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com"))
+            text.contains("browser") || text.contains("chrome") || text.contains("open google") -> packageManager.getLaunchIntentForPackage("com.android.chrome") ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com"))
+            text.contains("whatsapp") -> packageManager.getLaunchIntentForPackage("com.whatsapp")
+            text.contains("wifi") || text.contains("wi-fi") -> Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
+            text.contains("bluetooth") -> Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
+            text.contains("brightness") || text.contains("rotation") -> Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS)
+            text.contains("do not disturb") || text.contains("dnd") -> Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+            text.contains("airplane") -> Intent(android.provider.Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+            text.contains("calendar") -> Intent(Intent.ACTION_INSERT).setData(android.provider.CalendarContract.Events.CONTENT_URI)
+            text.contains("camera") -> Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+            text.contains("alarm") || text.contains("timer") -> Intent(android.provider.AlarmClock.ACTION_SET_ALARM)
+            text.contains("settings") -> Intent(android.provider.Settings.ACTION_SETTINGS)
             else -> null
         }
         val success = try {
-            if (intent == null) false else {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(intent)
-                true
-            }
+            if (intent == null) false else { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent); true }
         } catch (_: Exception) { false }
-        speak(if (success) "Done, sir. The requested screen was opened." else "I'm afraid that action is not supported or failed, sir.")
+        speak(if (success) "Requested app or settings screen opened. Please verify the final state on screen, sir." else "Failed: this command is not supported, the required app is missing, or Android denied the action, sir.")
     }
 
     private fun isEnabled(): Boolean = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
