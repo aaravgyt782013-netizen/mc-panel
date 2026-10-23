@@ -207,6 +207,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val ok = try { action.execute() } catch (_: Exception) { false }
         report(action.description, ok)
     }
+    private fun respond(message: String) {
+        heard = message
+        status = "SPEAKING"
+        speak(message)
+    }
+
     private fun report(action: String, success: Boolean) {
         val msg = if (success) "Done, sir. " + action + " succeeded." else "I'm afraid " + action + " failed, sir."
         history.add(0, SimpleDateFormat("HH:mm:ss", Locale.UK).format(Date()) + "  " + msg)
