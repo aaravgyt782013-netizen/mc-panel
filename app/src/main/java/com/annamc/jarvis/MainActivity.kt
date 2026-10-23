@@ -385,7 +385,7 @@ private fun JarvisScreen(
     val uptimeText = if (serviceStartedAt > 0L) { val seconds = ((System.currentTimeMillis() - serviceStartedAt) / 1000L).coerceAtLeast(0L); "%02d:%02d:%02d".format(Locale.UK, seconds / 3600, (seconds % 3600) / 60, seconds % 60) } else "Not currently recorded"
     val transition = rememberInfiniteTransition(label = "reactor")
     val pulse by transition.animateFloat(0.94f, 1.06f, infiniteRepeatable(tween(1350), RepeatMode.Reverse), label = "pulse")
-    val wave by transition.animateFloat(0.25f, 1f, infiniteRepeatable(tween(520), RepeatMode.Reverse), label = "wave")
+    val wave = if (diagPrefs.contains("diag_audio_level")) ((diagPrefs.getFloat("diag_audio_level", 0f) + 10f) / 50f).coerceIn(0.05f, 1f) else 0.05f
     LaunchedEffect(pending) {
         if (pending != null) {
             for (seconds in 10 downTo 1) {
