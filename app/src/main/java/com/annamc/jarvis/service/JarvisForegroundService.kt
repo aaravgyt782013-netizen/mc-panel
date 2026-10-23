@@ -72,6 +72,7 @@ class JarvisForegroundService : Service() {
             ACTION_STOP -> {
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, false).apply()
                 stopEngine()
+                sendState("OFF")
                 stopForegroundCompat()
                 stopSelf()
                 return START_NOT_STICKY
@@ -140,10 +141,11 @@ class JarvisForegroundService : Service() {
         try {
             speechService?.stop()
             speechService = null
+            val loadedModel = model ?: return
             val grammar = JSONArray().put(assistantName.lowercase(Locale.ROOT))
                 .put("hey " + assistantName.lowercase(Locale.ROOT))
                 .put("[unk]").toString()
-            val recognizer = Recognizer(model, 16000.0f, grammar)
+            val recognizer = Recognizer(loadedModel, 16000.0f, grammar)
             speechService = SpeechService(recognizer, 16000.0f).also { it.startListening(wakeListener) }
             updateNotification("Standby — say $assistantName")
             sendState("Standby")
