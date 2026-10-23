@@ -472,11 +472,11 @@ private fun JarvisScreen(
                         permissionItems.forEach { (key, label) ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(label, color = Color.White, fontSize = 12.sp, modifier = Modifier.weight(1f).padding(end = 8.dp))
-                                TextButton(onClick = { onPermission(key) }) { Text(if (key == permissionStage) "Grant" else "Open", color = Cyan) }
+                                TextButton(onClick = { onPermission(key) }) { Text(if (onPermissionStatus(key)) "✓ Granted" else if (key == permissionStage) "Grant" else "Open", color = if (onPermissionStatus(key)) Color(0xFF63E6A5) else Cyan) }
                             }
                             Divider(color = Color(0xFF17384D))
                         }
-                        Text("Current required gate: " + if (permissionStage.isBlank()) "microphone/notifications complete or skipped" else permissionStage, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp))
+                        Text("Green checks are live Android status. OEM autostart cannot be detected reliably and is shown as guidance.", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp))
                     }
                     else -> Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(18.dp)) {
                         Text("SETTINGS", color = Cyan, fontSize = 18.sp, fontWeight = FontWeight.Bold)
