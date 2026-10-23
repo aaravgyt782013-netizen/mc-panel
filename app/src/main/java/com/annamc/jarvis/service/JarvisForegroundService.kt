@@ -115,7 +115,7 @@ class JarvisForegroundService : Service() {
         if (Build.VERSION.SDK_INT >= 29) {
             audioManager.registerAudioRecordingCallback(object : AudioManager.AudioRecordingCallback() {
                 override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>?) {
-                    val others = configs.orEmpty().any { it.clientUid != applicationInfo.uid }
+                    val others = configs.orEmpty().any { config -> runCatching { config.javaClass.getMethod("getClientUid").invoke(config) as? Int }.getOrNull()?.let { it != applicationInfo.uid } ?: false }
                     if (others && !pausedByOtherRecorder) {
                         pausedByOtherRecorder = true
                         stopEngine()
