@@ -71,7 +71,19 @@ class JarvisForegroundService : Service() {
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
         tts = android.speech.tts.TextToSpeech(this) { status ->
-            if (status == android.speech.tts.TextToSpeech.SUCCESS) tts?.language = Locale.UK
+            if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                tts?.language = Locale.UK
+                tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onError(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) {
+                        Handler(Looper.getMainLooper()).post {
+                            if (isEnabled() && pendingCommand == null && !listeningForCommand &&
+                                !pausedByPowerSaver && !pausedByOtherRecorder && !pausedByCall) startWakeListening()
+                        }
+                    }
+                })
+            }
         }
         scope.launch(Dispatchers.Main) {
             AssistantSettings(applicationContext).assistantName.collect { newName ->
@@ -282,12 +294,10 @@ class JarvisForegroundService : Service() {
             }
             command.contains("time") -> {
                 speak("The time is " + SimpleDateFormat("h:mm a", Locale.UK).format(Date()) + ", sir.")
-                startWakeListening()
             }
             command.contains("battery") -> {
                 val level = (getSystemService(BATTERY_SERVICE) as BatteryManager).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
                 speak("Battery level is $level percent, sir.")
-                startWakeListening()
             }
             else -> {
                 // Any action that changes the device or opens an app requires explicit notification confirmation.
@@ -314,7 +324,6 @@ class JarvisForegroundService : Service() {
                 }
             } catch (_: Exception) { false }
             speak(if (success) "Done, sir. Flashlight changed." else "I'm afraid the flashlight failed, sir.")
-            startWakeListening()
             return
         }
         val intent = when {
@@ -336,7 +345,6 @@ class JarvisForegroundService : Service() {
             }
         } catch (_: Exception) { false }
         speak(if (success) "Done, sir. The requested screen was opened." else "I'm afraid that action is not supported or failed, sir.")
-        startWakeListening()
     }
 
     private fun isEnabled(): Boolean = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
