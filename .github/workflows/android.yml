@@ -26,10 +26,16 @@ jobs:
           mkdir -p app/src/main/assets /tmp/vosk-model-extract
           curl -fL --retry 3 https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/vosk-model.zip
           unzip -q /tmp/vosk-model.zip -d /tmp/vosk-model-extract
-          UUID_FILE="$(find /tmp/vosk-model-extract -type f -name uuid -print -quit)"
-          test -n "$UUID_FILE" || { echo "ERROR: Vosk archive has no uuid file"; exit 1; }
-          MODEL_DIR="$(dirname "$UUID_FILE")"
-          test -f "$MODEL_DIR/README" -o -d "$MODEL_DIR/am" -o -d "$MODEL_DIR/conf" || { echo "ERROR: Vosk model files missing beside uuid"; exit 1; }
+          AM_DIR="$(find /tmp/vosk-model-extract -type d -name am -print -quit)"
+          test -n "$AM_DIR" || { echo "ERROR: Vosk archive has no am/ model directory"; find /tmp/vosk-model-extract -maxdepth 3 -type f | head -40; exit 1; }
+          MODEL_DIR="$(dirname "$AM_DIR")"
+          test -d "$MODEL_DIR/conf" || { echo "ERROR: Vosk model conf/ directory missing beside am/"; exit 1; }
+          # Some upstream model archives omit uuid; Vosk's Android loader requires it.
+          if [ ! -s "$MODEL_DIR/uuid" ]; then
+            echo "Upstream archive has no uuid; generating a local model identifier."
+            cat /proc/sys/kernel/random/uuid > "$MODEL_DIR/uuid"
+          fi
+          test -s "$MODEL_DIR/uuid" || { echo "ERROR: could not create Vosk uuid"; exit 1; }
           rm -f app/src/main/assets/model-en-us.zip
           (cd "$MODEL_DIR" && zip -qr "$GITHUB_WORKSPACE/app/src/main/assets/model-en-us.zip" .)
           unzip -Z1 app/src/main/assets/model-en-us.zip | grep -qx 'uuid' || { echo "ERROR: uuid is not at the archive root"; exit 1; }
