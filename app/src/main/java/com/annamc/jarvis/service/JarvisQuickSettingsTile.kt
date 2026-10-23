@@ -20,6 +20,7 @@ class JarvisQuickSettingsTile : TileService() {
         val prefs = getSharedPreferences(JarvisForegroundService.PREFS, MODE_PRIVATE)
         val enabled = prefs.getBoolean(JarvisForegroundService.KEY_ENABLED, false)
         if (enabled) {
+            prefs.edit().putBoolean(JarvisForegroundService.KEY_ENABLED, false).apply()
             startService(Intent(this, JarvisForegroundService::class.java).setAction(JarvisForegroundService.ACTION_STOP))
         } else {
             val mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -30,6 +31,7 @@ class JarvisQuickSettingsTile : TileService() {
                 if (Build.VERSION.SDK_INT >= 34) startActivityAndCollapse(android.app.PendingIntent.getActivity(this, 0, launch, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE))
                 else startActivityAndCollapse(launch)
             } else {
+                prefs.edit().putBoolean(JarvisForegroundService.KEY_ENABLED, true).apply()
                 val start = Intent(this, JarvisForegroundService::class.java).setAction(JarvisForegroundService.ACTION_START)
                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(start) else startService(start)
             }
